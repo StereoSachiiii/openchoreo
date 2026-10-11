@@ -9,6 +9,8 @@ import (
 	"github.com/google/cel-go/cel"
 	"github.com/google/cel-go/common/types"
 	apiservercel "k8s.io/apiserver/pkg/cel"
+
+	"strings"
 )
 
 // ResourceType indicates which type of resource is being validated
@@ -60,7 +62,7 @@ func (v *CELValidator) ValidateExpression(expr string) error {
 	return v.ValidateWithEnv(expr, v.baseEnv)
 }
 
-// ValidateWithEnv validates a CEL expression with a specific environment.
+// ValidateWithEnv validates a CEL expression with a specific environment and estimates its cost.
 // This is used when the environment has been extended with forEach variables.
 func (v *CELValidator) ValidateWithEnv(expr string, env *cel.Env) error {
 	parsed, issues := env.Parse(expr)
@@ -73,6 +75,7 @@ func (v *CELValidator) ValidateWithEnv(expr string, env *cel.Env) error {
 		return fmt.Errorf("type check error: %w", issues.Err())
 	}
 
+	// TODO: Admission cost validation will be re-enabled once calibrated against corpus and backed by DeclType estimator
 	return nil
 }
 
@@ -129,4 +132,35 @@ func (v *CELValidator) GetBaseEnv() *cel.Env {
 // Used by forEach analysis to resolve map value types for field validation.
 func (v *CELValidator) GetTypeProvider() *apiservercel.DeclTypeProvider {
 	return v.typeProvider
+}
+
+// ResourceEnvironment returns the CEL environment for a specific resource,
+// extending the base environment with loop variables when forEach is configured.
+// This is the single environment factory specified in Project 701 §4.1.
+func (v *CELValidator) ResourceEnvironment(forEachExpr string, varName string) (*cel.Env, error) {
+	if forEachExpr == "" {
+		return v.baseEnv, nil
+	}
+
+	// Unwrap template expression ${...} if wrapped
+	expr := forEachExpr
+	if trimmed, ok := strings.CutPrefix(strings.TrimSpace(expr), "${"); ok {
+		if inner, ok := strings.CutSuffix(trimmed, "}"); ok {
+			expr = strings.TrimSpace(inner)
+		}
+	}
+
+	info, err := analyzeForEachExpression(expr, varName, v.baseEnv)
+	if err != nil {
+		return nil, fmt.Errorf("failed to analyze forEach expression: %w", err)
+	}
+	if info == nil {
+		return v.baseEnv, nil
+	}
+
+	extEnv, err := extendEnvWithForEach(v.baseEnv, info, v.typeProvider)
+	if err != nil {
+		return nil, fmt.Errorf("failed to extend CEL environment with forEach: %w", err)
+	}
+	return extEnv, nil
 }

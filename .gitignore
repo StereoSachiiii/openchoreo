@@ -40,6 +40,6 @@ go.work
 
 *.local.md
 
-# Log files
 *.log
 test/e2e/_diagnostics/*
+
