@@ -1,11 +1,4 @@
 # Project 701 — Solution Design and Execution Plan
-## Soundness-first static cost analysis, ownership-aware diagnostics, and input bounding for OpenChoreo templates
-
-**Authors:** Sachin Lakshitha (implementer). **Mentor:** Chathuranga Dassanayake (approver).
-**Status:** Design committed. Items needing mentor input are listed in §10 with a default already chosen.
-
-**Evidence legend.** `[V file:line]` = read by the agent in a prior session and reported with that location. Re-read before any upstream PR. `[U]` = unverified. `CHOSEN` = a number picked by the author with a stated reason; it is not derived. `MEASURED` = produced by a cited run.
-
 ---
 
 ## 1. What this project delivers
@@ -61,12 +54,12 @@ OpenChoreo templates (ComponentType, ClusterComponentType, Trait, ClusterTrait) 
 ## 3. Architecture
 
 ```mermaid
-flowchart TD
+graph TD
     subgraph Entry["Entry points"]
         CLI["A1 CLI report"]
         WH["A2 Webhook (existing ComponentType/Trait validators)"]
     end
-    subgraph D1["D1 estimator  (internal/validation/component/cost)"]
+    subgraph D1["D1 estimator (internal/validation/component/cost)"]
         ENV["B1 Environment factory"]
         SIZE["B2 Size model"]
         AST["B3 AST cost walker + function models"]
@@ -88,8 +81,13 @@ flowchart TD
     end
     CLI --> ENV
     WH --> ENV
-    ENV --> SIZE --> AST --> AGG --> VER
-    VER --> OWN --> BIS --> DIA
+    ENV --> SIZE
+    SIZE --> AST
+    AST --> AGG
+    AGG --> VER
+    VER --> OWN
+    OWN --> BIS
+    BIS --> DIA
     VER --> RAT
     CRD -. "enforced bounds feed" .-> SIZE
     CTL --> RUN
@@ -625,22 +623,3 @@ Written now so the data cannot bend the decision. Thresholds are CHOSEN.
 
 ---
 
-## 13. Evidence index
-
-`api/v1alpha1/workload_types.go:75,79,100-123,215,224,242,250,306` · `helm/openchoreo-control-plane/values.yaml:772,787,794` · `internal/controller/releasebinding/controller.go:564-571,1601` · `internal/controller/workflowrun/controller.go:277` · `internal/controller/projectreleasebinding/controller_render.go:66` · `internal/controller/resourcereleasebinding/controller.go:253` · `internal/pipeline/component/renderer/foreach.go:23,32,66-68,80-84` · `internal/pipeline/component/context/derived.go:24-44,100-113` · `internal/template/budget.go:126` · `internal/template/custom_functions.go:492-545` · `internal/template/engine_cache.go:45-47,61,81` · `internal/template/errors.go:40-44` · `internal/validation/component/cel_validator.go` (uncommitted 10,000 gate) · `internal/validation/component/decltype/reflect.go:14-15`.
-
----
-
-## CHANGELOG (vs the previous solution.md)
-
-1. Rebuilt the document; the previous copy had a duplicated and truncated §3.8 diagram.
-2. Removed the "+1 per element, +10 init" rule and the §4.1 table of invented zero deltas. The 42-unit gap is now an open defect resolved by the generated differential table.
-3. Primary verdict is now the **template total against the 2,000,000 cumulative budget**; the previous version only compared single expressions.
-4. Unenforced bounds default to UNKNOWN; policy bounds are opt-in. Replaced `--strict-bounds` and `--enforce-cel-cost` with `--cel-cost-mode` and `--cel-cost-policy-bounds`.
-5. Webhook extends the existing validators; no new path; `failurePolicy` unchanged; estimator failure fails open.
-6. Ratchet is per resource id with a defined order including UNKNOWN. Platform-owned violations never reject.
-7. D4b short-circuit keys on an `inputsHash`, not on binding generation (a generation-only guard would wedge after a template fix).
-8. D4 values replaced the 128/64/32 set with CHOSEN 1,024/256/128 pending audit; added `visibility` MaxItems.
-9. `derived.*` models must be traced from source; inner `envs` list called out as the saturating cause.
-10. Weeks reordered: soundness and experiments first, written kill criteria at week 4; enforcement is a maintainer decision, not a deliverable.
-11. Removed the R1 "1.48 s" figure (no run in evidence) and the invented team roles.

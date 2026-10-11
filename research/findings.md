@@ -183,3 +183,184 @@ Evaluation of all 703 expressions across the 13 sample ComponentTypes in `sample
     trips `ErrCostLimitExceeded` (2,000,000) at bisected $N=46$ environment variables per level (270 ms wall time, 58.5 MB heap allocation).
   - An API server / envtest accepts a Workload object with 46 environment variables without error (payload size < 2 KB). Unbounded platform context structures can therefore trigger denial-of-service in the reconciler unless bounded at the input schema.
 
+## 6. Upstream Kubernetes Implementation Deep-Dive (KEP-2876)
+
+Direct citations and code mechanisms retrieved from pinned modules `k8s.io/apiextensions-apiserver@v0.36.3`, `k8s.io/apiserver@v0.36.3`, and `github.com/google/cel-go@v0.31.0`.
+
+### 6.1 Admission Validation Gate Entry Point
+
+In `k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/validation/validation.go`:
+
+```go
+// Line 1275-1288
+compResults, err := cel.Compile(typeInfo.Schema, typeInfo.DeclType, celconfig.PerCallLimit, opts.celEnvironmentSet, opts.preexistingExpressions)
+if err != nil {
+    allErrs.CELErrors = append(allErrs.CELErrors, field.InternalError(fldPath.Child("x-kubernetes-validations"), err))
+} else {
+    for i, cr := range compResults {
+        expressionCost := getExpressionCost(cr, celContext)
+        if !opts.suppressPerExpressionCost && expressionCost > StaticEstimatedCostLimit {
+            costErrorMsg := getCostErrorMessage("estimated rule cost", expressionCost, StaticEstimatedCostLimit)
+            allErrs.CELErrors = append(allErrs.CELErrors, field.Forbidden(fldPath.Child("x-kubernetes-validations").Index(i).Child("rule"), costErrorMsg))
+        }
+        if celContext.TotalCost != nil {
+            celContext.TotalCost.ObserveExpressionCost(fldPath.Child("x-kubernetes-validations").Index(i).Child("rule"), expressionCost)
+        }
+    }
+}
+```
+
+Static budget limits and CRD schema limits are defined in `validation.go:58-61`:
+- `StaticEstimatedCostLimit = 10000000` (10M cost units per expression)
+- `StaticEstimatedCRDCostLimit = 100000000` (100M cost units total across the CRD schema)
+
+Cumulative CRD budget enforcement is evaluated in `validation.go:982-992`:
+```go
+if celContext != nil && celContext.TotalCost != nil {
+    if celContext.TotalCost.Total > StaticEstimatedCRDCostLimit {
+        for _, expensive := range celContext.TotalCost.MostExpensive {
+            costErrorMsg := fmt.Sprintf("contributed to estimated rule cost total exceeding cost limit for entire OpenAPIv3 schema")
+            allErrs = append(allErrs, field.Forbidden(expensive.Path, costErrorMsg))
+        }
+        costErrorMsg := getCostErrorMessage("x-kubernetes-validations estimated rule cost total for entire OpenAPIv3 schema", celContext.TotalCost.Total, StaticEstimatedCRDCostLimit)
+        allErrs = append(allErrs, field.Forbidden(fldPath.Child("openAPIV3Schema"), costErrorMsg))
+    }
+}
+```
+
+### 6.2 Enclosing Cardinality and Overflow Multiplication
+
+In `validation.go:1340-1355`, rule cost incorporates the cardinality of enclosing arrays/maps:
+
+```go
+func multiplyWithOverflowGuard(baseCost, cardinality uint64) uint64 {
+    if baseCost == 0 {
+        return 0
+    } else if math.MaxUint/baseCost < cardinality {
+        return math.MaxUint
+    }
+    return baseCost * cardinality
+}
+
+func getExpressionCost(cr cel.CompilationResult, cardinalityCost *CELSchemaContext) uint64 {
+    if cardinalityCost.MaxCardinality != unbounded {
+        return multiplyWithOverflowGuard(cr.MaxCost, *cardinalityCost.MaxCardinality)
+    }
+    return multiplyWithOverflowGuard(cr.MaxCost, cr.MaxCardinality)
+}
+```
+
+### 6.3 Compilation and Cost Estimation Invocation
+
+In `k8s.io/apiextensions-apiserver/pkg/apiserver/schema/cel/compilation.go:236-258`:
+
+```go
+prog, err := ruleEnv.Program(ast,
+    cel.CostLimit(perCallLimit),
+    cel.CostTracking(estimator),
+    cel.InterruptCheckFrequency(celconfig.CheckFrequency),
+)
+if err != nil {
+    compilationResult.Error = &apiservercel.Error{Type: apiservercel.ErrorTypeInvalid, Detail: "program instantiation failed: " + err.Error()}
+    return
+}
+costEst, err := ruleEnv.EstimateCost(ast, estimator)
+if err != nil {
+    compilationResult.Error = &apiservercel.Error{Type: apiservercel.ErrorTypeInternal, Detail: "cost estimation failed: " + err.Error()}
+    return
+}
+compilationResult.MaxCost = costEst.Max
+compilationResult.MaxCardinality = maxCardinality
+compilationResult.Program = prog
+```
+
+Here `celconfig.CheckFrequency = 100` and `celconfig.PerCallLimit = 1000000` (`k8s.io/apiserver/pkg/apis/cel/config.go:28-40`).
+
+### 6.4 AST Path Traversal in sizeEstimator
+
+In `compilation.go:306-348`, the `sizeEstimator` resolves AST paths directly against the `DeclType` tree:
+
+```go
+func newCostEstimator(root *apiservercel.DeclType) *library.CostEstimator {
+    return &library.CostEstimator{SizeEstimator: &sizeEstimator{root: root}}
+}
+
+type sizeEstimator struct {
+    root *apiservercel.DeclType
+}
+
+func (c *sizeEstimator) EstimateSize(element checker.AstNode) *checker.SizeEstimate {
+    if len(element.Path()) == 0 {
+        return nil
+    }
+    currentNode := c.root
+    // cut off "self" from path, since we always start there
+    for _, name := range element.Path()[1:] {
+        switch name {
+        case "@items", "@values":
+            if currentNode.ElemType == nil {
+                return nil
+            }
+            currentNode = currentNode.ElemType
+        case "@keys":
+            if currentNode.KeyType == nil {
+                return nil
+            }
+            currentNode = currentNode.KeyType
+        default:
+            field, ok := currentNode.Fields[name]
+            if !ok {
+                return nil
+            }
+            if field.Type == nil {
+                return nil
+            }
+            currentNode = field.Type
+        }
+    }
+    return &checker.SizeEstimate{Min: 0, Max: uint64(currentNode.MaxElements)}
+}
+```
+
+### 6.5 Request-Size Bounding for Unbounded Collections
+
+In `k8s.io/apiserver/pkg/cel/common/schemas.go:261-288`:
+
+```go
+const maxRequestSizeBytes = int64(3 * 1024 * 1024) // 3 MiB
+
+func estimateMaxArrayItemsFromMinSize(minSize int64) int64 {
+    // subtract 2 to account for [ and ]
+    return (maxRequestSizeBytes - 2) / (minSize + 1)
+}
+
+func estimateMaxAdditionalPropertiesFromMinSize(minSize int64) int64 {
+    // 2 bytes for key + "" + colon + comma + smallest possible value
+    keyValuePairSize := minSize + 6
+    // subtract 2 to account for { and }
+    return (maxRequestSizeBytes - 2) / keyValuePairSize
+}
+
+func estimateMaxElementsFromMaxLength(s Schema) int64 {
+    // multiply the user-provided max length by 4 in the case of an otherwise-untyped string
+    // OpenAPIv3 maxLength is specified in runes, but request limits are bytes (UTF-8 up to 4 bytes/rune)
+    return zeroIfNegative(*s.MaxLength()) * 4
+}
+```
+
+In `k8s.io/apiextensions-apiserver/pkg/apiserver/schema/cel/compilation.go:355-365`:
+```go
+func maxCardinality(minSize int64) uint64 {
+    sz := minSize + 1 // assume at least one comma between elements
+    return uint64(celconfig.MaxRequestSizeBytes / sz)
+}
+```
+
+### 6.6 Ratcheting and Grandfathering on Update
+
+In `k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/validation/validation.go`:
+- Unchanged versions suppress the per-expression cost check:
+  `opts.suppressPerExpressionCost = true` when `opts.versionsWithUnchangedSchemas.Has(version)` (`validation.go:221-225`).
+- Unchanged rules compile against `envSet.StoredExpressionsEnv()`, allowing compatibility with newer CEL function sets (`validation.go:158-163`).
+
+
