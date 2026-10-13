@@ -166,10 +166,10 @@ Platform variables (`workload`, `metadata`, `trait`, `dataplane`) have no user s
 
 ## 6. Budget Thresholds & Error UX Recommendations
 
-### 6.1 Recommended Budgets
-1. **Per-Expression Limit ($B_{\text{expr}}$)**: `10,000` cost units.
-2. **Per-Resource Template Limit ($B_{\text{res}}$)**: `50,000` cost units (accounts for `forEach` expansion).
-3. **Per-ComponentType / Spec Limit ($B_{\text{total}}$)**: `200,000` cost units.
+### 6.1 Recommended Budgets & Findings
+- **Runtime Budget Calibration**: The runtime per-expression limit and cumulative budget per render is **2,000,000** (see `internal/template/engine_cache.go`).
+- Static estimates must certify $B_{\text{static}} \le B_{\text{runtime}}$ ($2,000,000$). Arbitrary lower thresholds like $10,000$ reject valid real-world templates (where legitimate single expressions have measured costs up to 36,141 units).
+- **Per-ComponentType / Spec Limit**: Full render composite limit checked against $2,000,000$.
 
 ### 6.2 Actionable Author-Facing Error Message Design
 ```
@@ -178,8 +178,8 @@ admission webhook "vcomponenttype-v1alpha1.kb.io" denied the request:
 ComponentType.openchoreo.dev "web-service" is invalid:
   spec.resources[1].template.spec.routes: Invalid value:
     Expression: "${parameters.routes.map(r, r.backends.map(b, b.port))}"
-    Estimated Cost: 25,200 (exceeds per-expression budget of 10,000)
-    Cause: 'parameters.routes' is unbounded (assumed 100 items), and nested 'r.backends' is unbounded (assumed 100 items).
+    Estimated Cost: 2,125,200 (exceeds budget of 2,000,000)
+    Cause: 'parameters.routes' is unbounded (calculated upper bound: 1,048,575 items), and nested 'r.backends' is unbounded.
     Resolution: Add 'maxItems' constraint to 'parameters.routes' (e.g. maxItems: 10) and 'r.backends' in your openAPIV3Schema.
 ```
 
@@ -193,3 +193,98 @@ ComponentType.openchoreo.dev "web-service" is invalid:
 4. **Kubernetes CEL CRD Compilation & Validation Engine**: `k8s.io/apiextensions-apiserver/pkg/apiserver/schema/cel/compilation.go`
 5. **Google CEL-Go Cost Checker API**: `github.com/google/cel-go/checker/cost.go`
 6. **Kubernetes Official Docs**: *Validation Rules in CustomResourceDefinitions*, https://kubernetes.io/docs/tasks/extend-kubernetes/custom-resources/custom-resource-definitions/#validation-rules
+
+---
+
+## 8. Multi-Tier Architecture Analysis & Findings
+
+When evaluating a multi-tier cost enforcement architecture across the OpenChoreo lifecycle (Authoring $\to$ Release $\to$ Runtime Reconciliation), the following findings and boundaries govern the design:
+
+### Tier 1: Authoring Admission (ComponentType / Trait Webhooks)
+- **Mechanism**: Tokenize and compile CEL expressions into AST; run static `cel.CostEstimator` over `DeclType` trees.
+- **Why no Go collections/slices are built**: Static cost estimation never evaluates expressions or allocates memory for data. It calculates upper-bound costs mathematically using structural schema metadata (`maxItems`, `maxLength`, `maxProperties`).
+- **Critical Finding (Platform Variables)**: OpenAPI parameter schemas (`parameters.*`) only account for a fraction of expression complexity. Many expensive comprehensions iterate over platform-injected roots (`workload.*`, `metadata.*`, `derived.*`). Tier 1 must construct synthetic `DeclType` trees with enforced platform bounds (e.g. `workload.endpoints`, DNS label length limits) to avoid false-positive UNKNOWN saturation or unmetered DoS.
+
+### Tier 2: Release Admission (`ComponentRelease` Webhook)
+- **Mechanism**: Validates concrete developer inputs (`parameters`) against the snapshotted OpenAPI schema (`maxItems`, `maxLength`) via JSON schema validators. Validates composite static cost for `(ComponentType, AttachedTraits[])`.
+- **Anti-Pattern Avoided (No Pre-Evaluation in Webhooks)**: Webhooks must **not** attempt to render templates or build/traverse Go collections in memory to check sizes. Pre-evaluating in admission duplicates the controller rendering pipeline and exposes the kube-apiserver webhook to algorithmic DoS attacks. Real evaluation is deferred to the controller.
+- **Scope**: `ReleaseBinding` admission is a no-op; the actual binding and schema snapshots are certified at `ComponentRelease` admission.
+
+### Tier 3: Controller Reconciler (`ReleaseBindingReconciler`)
+- **Mechanism**: In-memory LRU cache for compiled `cel.Program` ASTs, runtime `cel.CostObserver` (budget: 2,000,000 units), and bounded execution with `context.WithTimeout(ctx, timeout)`.
+- **LRU Cache Role**: The cache only saves compilation CPU cycles; it does not protect against execution DoS. Safety is guaranteed solely by the runtime `CostObserver` and timeout context.
+- **Poison Pill Prevention (Terminal Errors)**: If a render fails due to timeout or cost-budget exhaustion, controller-runtime must **not** blindly return `err` (which causes unbounded requeue loops and starves single-worker reconcile queues). Cost/timeout failures are deterministic; they must be classified as terminal (`IsTerminalRenderError`), set a `Ready=False` status condition, and terminate without requeuing until the spec changes.
+
+---
+
+## 9. Comprehensive Limits Reference (Kubernetes, JSON, Containers, & Runtime)
+
+A unified reference consolidating physical network/etcd thresholds, Kubernetes admission sizing math, container field constraints, and sensible static/runtime defaults for OpenChoreo.
+
+### 9.1 Physical Request & Storage Boundaries
+
+| Boundary Layer | Metric / Parameter | Value | Downstream Behavior / Error |
+| :--- | :--- | :--- | :--- |
+| **API Server Request** | HTTP Body Limit (`MaxRequestSizeBytes`) | **3 MiB** (`3,145,728` bytes) | Rejected with HTTP `413 Request Entity Too Large` (`limit is 3145728`) |
+| **etcd Raft Transaction** | Key-Value / Txn Limit (`--max-request-bytes`) | **1.5 MiB** (`1,572,864` bytes) | `etcdserver: request is too large` |
+| **Single Manifest Storage** | `RenderedRelease.spec.resources` | **< 1.5 MiB** combined | Must fit within single etcd object transaction |
+| **ConfigMap / Secret** | Total data size | **1 MiB** (`1,048,576` bytes) | Enforced by Kubernetes core API validation |
+
+---
+
+### 9.2 Kubernetes KEP-2876 Worst-Case Sizing Derivations (from `schemas.go`)
+
+When an OpenAPI v3 structural schema omits explicit constraints (`maxItems`, `maxLength`, `maxProperties`), Kubernetes does not assume $\infty$; it computes the theoretical maximum that could fit in a single 3 MiB serialized JSON request:
+
+$$\text{MaxRequestSizeBytes} = 3 \times 1024 \times 1024 = 3,145,728 \text{ bytes}$$
+
+| Data Type | Sizing Formula | Derived Upper Bound | Rationale |
+| :--- | :--- | :--- | :--- |
+| **Unbounded String** | `MaxRequestSizeBytes - 2` | **3,145,726** characters | Full body minus enclosing `""` quotes |
+| **Bounded String** | `maxLength * 4` | $4 \times \text{maxLength}$ bytes | UTF-8 multi-byte rune worst case (up to 4 bytes per rune) |
+| **Unbounded List/Slice** | $\lfloor \frac{\text{MaxRequestSizeBytes} - 2}{\text{minSerializedItemSize} + 1} \rfloor$ | **1,048,575** items (strings)<br>**1,572,863** items (empty `{}`) | Subtract 2 for `[]`; min string `""` is 2 bytes + 1 comma |
+| **Unbounded Map/Object** | $\lfloor \frac{\text{MaxRequestSizeBytes} - 2}{\text{minPropertySize} + 6} \rfloor$ | **393,215** entries | Subtract 2 for `{}`; 6 bytes for key `""` + `:` + comma |
+
+---
+
+### 9.3 Container, Pod, and Workload Limits
+
+Container specs and workload definitions have practical structural ceilings enforced by API specs or runtime operational sanity:
+
+| Field Path | Practical / Enforced Limit | Source / Standard | Sensible OpenChoreo Bound |
+| :--- | :--- | :--- | :--- |
+| **Container Image URI** | `1,024` chars | Docker / OCI Image Spec & DNS limits | `1,024` chars (POLICY) |
+| **Container Command (`command`)**| `32` items | Practical exec argv slice | `32` items (POLICY) |
+| **Container Arguments (`args`)** | `64` items | Practical exec argv slice | `64` items (POLICY) |
+| **Environment Variables (`env`)** | `1,024` entries | `workload.container.env` (Linux exec env limits) | `1,024` items (ENFORCED in D4) |
+| **Mounted Files / Configs** | `256` files | `workload.container.files` | `256` items (ENFORCED in D4) |
+| **Endpoints (`endpoints`)** | `128` endpoints | `workload.endpoints` (Service ports) | `128` items (ENFORCED in D4) |
+| **Endpoint Visibility** | `4` items | Enum values (`Cluster`, `Project`, etc.) | `4` items (MaxItems=4) |
+| **Dependencies (Endpoints/Res)** | `50` items | `workload_types.go:215,224` | `50` items (ENFORCED in CRD) |
+| **Env & File Bindings** | `50` items | `workload_types.go:242,250` | `50` items (ENFORCED in CRD) |
+| **DNS Label (Namespace, Port)** | `63` chars | RFC 1123 label (`[a-z0-9]([-a-z0-9]*[a-z0-9])?`) | `63` chars (ENFORCED) |
+| **DNS Subdomain (Resource Name)** | `253` chars | RFC 1123 subdomain | `253` chars (ENFORCED) |
+| **Labels & Annotations** | `50` keys / values | Practical metadata ceiling | `50` entries (POLICY) |
+
+---
+
+### 9.4 Template Loop & Expansion Bounds
+
+| Construct | Limit | Source | Behavior on Exceeded |
+| :--- | :--- | :--- | :--- |
+| **`forEach` loop items** | `100` per loop | `foreach.go:23` | Returns `ErrExpansionLimitExceeded` |
+| **`forEach` render total** | `10,000` per render | `foreach.go:32` | Returns `ErrExpansionLimitExceeded` |
+| **Max Schema Nesting** | `10` levels | `schema_sizer.go:23` | Halts recursion to prevent stack exhaustion |
+
+---
+
+### 9.5 CEL Static & Runtime Engine Limits
+
+| Dimension | Static Threshold (Authoring) | Runtime Threshold (Reconciler) | Enforcement Mechanism |
+| :--- | :--- | :--- | :--- |
+| **Single CEL Expression** | $\le 2,000,000$ | **2,000,000** | Static: `checker.Cost()` over `DeclType`<br>Runtime: `cel.CostObserver` |
+| **Total Render Cumulative** | $\le 2,000,000$ | **2,000,000** | Static: Template aggregator $\sum \text{Resource}$<br>Runtime: cumulative cost meter |
+| **Evaluation Timeout** | N/A (compile-time) | **1s - 5s** (bounded) | `context.WithTimeout(ctx, timeout)` |
+| **Render Failure Policy** | Admission Webhook rejection | Terminal error (`ctrl.Result{}, nil`) | `IsTerminalRenderError` (no requeue) |
+
+
