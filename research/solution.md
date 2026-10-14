@@ -623,3 +623,35 @@ Written now so the data cannot bend the decision. Thresholds are CHOSEN.
 
 ---
 
+## 13. Implementation Progress & State Tracking (Where We Left Off)
+
+**Last Updated:** October 14, 2026  
+**Git Branch:** `feat/701-cel-cost`  
+**Latest Commit:** `8892cbfc` pushed to `origin` (`https://github.com/StereoSachiiii/openchoreo.git`)  
+**Scope Boundary Note:** Ownership classification (PE vs Platform blaming, owner partitioning, bisection ceiling solver) is held back per maintainer request. All diagnostics and verdicts strictly report status as `WITHIN BUDGET`, `OVER BUDGET`, or `UNKNOWN` based on the 2,000,000 budget and sized input status.
+
+### 13.1 Delivered Components
+
+| Item / Milestone | Status | Key Artifacts & Changes |
+|---|---|---|
+| **Single Environment Factory (M0.1)** | **Done** | `internal/validation/component/cel_validator.go`, `cel_env.go`. Exposes `GetRootTypes()` on `CELValidator` for direct DeclType root sharing without duplicate environment construction. |
+| **Differential Soundness & 42-Unit Undercount Fix (M0.2, M0.3)** | **Done** | `internal/validation/component/cost/decltype_estimator.go`. Pinpointed defect in `cel-go` `estimateFlattenSize` ignoring comprehension results (`resSize = 0`). Implemented explicit call cost handling in `EstimateCallCost` for `flatten` calculating exact runtime cost $11 + N$ and $ResultSize = N$. Returns `UNKNOWN` (`math.MaxUint64`) if unbounded. Verified with `costreport -mode differential` (0 FAIL rows, all tests PASS). |
+| **Template Aggregator B4 (M1.1)** | **Done** | `internal/validation/component/cost/aggregator.go`, `aggregator_test.go`. Handles string interpolation base charges ($k + \sum \text{cost}(e_i)$), `forEach` loop expansion bounds ($M = \min(\text{size}, 100)$), cumulative render cap breach detection ($\le 10,000$ expansions), and cumulative 2,000,000 render budget evaluation. Added `EstimateComponentTypeSpec` to support both `ComponentType` and `ClusterComponentType`. |
+| **Per-Resource Ratchet D1r (M1.4)** | **Done** | `internal/validation/component/cost/ratchet.go`, `ratchet_test.go`. Evaluates template spec updates on resource `id` basis using rank order `WITHIN (1) < OVER (2) < UNKNOWN (3)`. |
+| **Webhook Integration A2 (M2.1)** | **Done** | `internal/validation/component/cost/webhook_checker.go`. Implements fail-open admission enforcement with 2-second timeout and panic recovery. Integrated into `internal/webhook/componenttype/webhook.go` and `internal/webhook/clustercomponenttype/webhook.go` (`ValidateCreate` and `ValidateUpdate`). Existing Ginkgo webhook suites pass. |
+| **Cost Report CLI (costreport)** | **Done** | `internal/validation/component/cost/cmd/costreport/main.go`. Supports `-mode differential`, `-mode corpus`, and `-mode lint` with both `text` and `json` outputs over `samples/` for `ComponentType` and `ClusterComponentType`. |
+
+### 13.2 Next Steps to Pick Up
+
+1. **Integrate WebhookCostChecker into Trait & ClusterTrait Webhooks (M2.1 continuation)**:
+   - Wire `WebhookCostChecker` into `internal/webhook/trait/webhook.go` and `internal/webhook/clustertrait/webhook.go` (`ValidateCreate` and `ValidateUpdate`), matching the `ComponentType` pattern.
+2. **Execute Experiments R0–R2 & E8 (§7)**:
+   - Measure admission latency p50/p99 (E8) via benchmark or synthetic test harness.
+   - Audit `ReleaseBinding` and controller reconcile retry loops per R0.
+3. **Workload CRD Bounds & Controller Handling (D4 / §4.10)**:
+   - Audit developer-supplied inputs (`workload.spec.containers[*].env`, `files`, `endpoints`).
+   - Add bounds and update reconciler error classification for deterministic render failures.
+4. **Ownership Classification & Diagnostics (D2 / C2–C4)**:
+   - When maintainer re-opens ownership scope: implement `OwnershipClassifier`, bisection ceiling solver, and author-facing remediation hints.
+
+
