@@ -151,6 +151,29 @@ func (e *DeclTypeCostEstimator) EstimateCallCost(function, overloadID string, ta
 			},
 			ResultSize: &checker.SizeEstimate{Min: 0, Max: 0},
 		}
+
+	case "flatten":
+		// When flatten operates on a comprehension result whose intermediate container size
+		// cannot be statically deduced by cel-go, cel-go undercounts (e.g. charging 1 instead of N + 11).
+		// Per §4.3 and §1.1 Invariants ("Soundness over coverage: never add arbitrary margins; unmodeled
+		// or undercounting node kinds evaluate as UNKNOWN"):
+		if target == nil || (*target).ComputedSize() == nil {
+			return &checker.CallEstimate{
+				CostEstimate: checker.CostEstimate{
+					Min: 1,
+					Max: math.MaxUint64,
+				},
+				ResultSize: &checker.SizeEstimate{Min: 0, Max: math.MaxUint64},
+			}
+		}
+		targetSz := (*target).ComputedSize().Max
+		return &checker.CallEstimate{
+			CostEstimate: checker.CostEstimate{
+				Min: 1,
+				Max: 11 + targetSz,
+			},
+			ResultSize: &checker.SizeEstimate{Min: 0, Max: targetSz},
+		}
 	}
 
 	return nil

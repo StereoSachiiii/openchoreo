@@ -27,6 +27,7 @@ const (
 type CELValidator struct {
 	baseEnv      *cel.Env
 	typeProvider *apiservercel.DeclTypeProvider
+	rootTypes    map[string]*apiservercel.DeclType
 }
 
 // NewCELValidator creates a validator for the specified resource type.
@@ -36,13 +37,14 @@ type CELValidator struct {
 func NewCELValidator(resourceType ResourceType, opts SchemaOptions) (*CELValidator, error) {
 	var env *cel.Env
 	var provider *apiservercel.DeclTypeProvider
+	var rootTypes map[string]*apiservercel.DeclType
 	var err error
 
 	switch resourceType {
 	case ComponentTypeResource:
-		env, provider, err = buildComponentCELEnv(opts)
+		env, provider, rootTypes, err = buildComponentCELEnvWithRoots(opts)
 	case TraitResource:
-		env, provider, err = buildTraitCELEnv(opts)
+		env, provider, rootTypes, err = buildTraitCELEnvWithRoots(opts)
 	default:
 		return nil, fmt.Errorf("unknown resource type: %v", resourceType)
 	}
@@ -54,7 +56,13 @@ func NewCELValidator(resourceType ResourceType, opts SchemaOptions) (*CELValidat
 	return &CELValidator{
 		baseEnv:      env,
 		typeProvider: provider,
+		rootTypes:    rootTypes,
 	}, nil
+}
+
+// GetRootTypes returns the root DeclTypes for cost estimation.
+func (v *CELValidator) GetRootTypes() map[string]*apiservercel.DeclType {
+	return v.rootTypes
 }
 
 // ValidateExpression validates a CEL expression with the base environment

@@ -42,54 +42,70 @@ type SchemaOptions struct {
 
 // buildComponentCELEnv creates a schema-aware CEL environment for component validation.
 func buildComponentCELEnv(opts SchemaOptions) (*cel.Env, *apiservercel.DeclTypeProvider, error) {
+	env, prov, _, err := buildComponentCELEnvWithRoots(opts)
+	return env, prov, err
+}
+
+// buildComponentCELEnvWithRoots creates a schema-aware CEL environment and returns the root DeclTypes.
+func buildComponentCELEnvWithRoots(opts SchemaOptions) (*cel.Env, *apiservercel.DeclTypeProvider, map[string]*apiservercel.DeclType, error) {
 	return buildCELEnv(componentContextFields, opts)
 }
 
 // buildTraitCELEnv creates a schema-aware CEL environment for trait validation.
 func buildTraitCELEnv(opts SchemaOptions) (*cel.Env, *apiservercel.DeclTypeProvider, error) {
+	env, prov, _, err := buildTraitCELEnvWithRoots(opts)
+	return env, prov, err
+}
+
+// buildTraitCELEnvWithRoots creates a schema-aware CEL environment for trait validation and returns roots.
+func buildTraitCELEnvWithRoots(opts SchemaOptions) (*cel.Env, *apiservercel.DeclTypeProvider, map[string]*apiservercel.DeclType, error) {
 	return buildCELEnv(traitContextFields, opts)
 }
 
 // buildCELEnv creates a schema-aware CEL environment with the given context fields and schema options.
 // Schema-based fields (parameters, environmentConfigs) are derived from the provided schemas.
 // Reflection-based fields (metadata, workload, etc.) come from the contextFields slice.
-func buildCELEnv(contextFields []decltype.FieldInfo, opts SchemaOptions) (*cel.Env, *apiservercel.DeclTypeProvider, error) {
+func buildCELEnv(contextFields []decltype.FieldInfo, opts SchemaOptions) (*cel.Env, *apiservercel.DeclTypeProvider, map[string]*apiservercel.DeclType, error) {
 	baseEnv, err := createBaseEnv()
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 
 	numFields := len(contextFields) + len(schemaBasedFields)
 	declTypes := make([]*apiservercel.DeclType, 0, numFields)
 	varOpts := make([]cel.EnvOption, 0, numFields)
+	roots := make(map[string]*apiservercel.DeclType, numFields)
 
 	// Register schema-based fields
 	paramType := schemaToTypeOrEmpty(opts.ParametersSchema, "Parameters")
 	declTypes = append(declTypes, paramType)
+	roots["parameters"] = paramType
 	varOpts = append(varOpts, cel.Variable("parameters", paramType.CelType()))
 
 	environmentConfigsType := schemaToTypeOrEmpty(opts.EnvironmentConfigsSchema, "EnvironmentConfigs")
 	declTypes = append(declTypes, environmentConfigsType)
+	roots["environmentConfigs"] = environmentConfigsType
 	varOpts = append(varOpts, cel.Variable("environmentConfigs", environmentConfigsType.CelType()))
 
 	// Register reflection-based fields
 	for _, f := range contextFields {
 		declTypes = append(declTypes, f.DeclType)
+		roots[f.Name] = f.DeclType
 		varOpts = append(varOpts, cel.Variable(f.Name, f.DeclType.CelType()))
 	}
 
 	provider := apiservercel.NewDeclTypeProvider(declTypes...)
 	providerOpts, err := provider.EnvOptions(baseEnv.CELTypeProvider())
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	varOpts = append(varOpts, providerOpts...)
 
 	env, err := baseEnv.Extend(varOpts...)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
-	return env, provider, nil
+	return env, provider, roots, nil
 }
 
 // createBaseEnv creates the base CEL environment with standard extensions.

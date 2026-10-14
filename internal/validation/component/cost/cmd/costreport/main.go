@@ -4,18 +4,26 @@
 package main
 
 import (
+	"encoding/json"
 	"flag"
 	"fmt"
 	"math"
 	"os"
+	"path/filepath"
+	"strings"
 	"text/tabwriter"
 
 	"github.com/google/cel-go/cel"
 	"github.com/google/cel-go/checker"
+	"gopkg.in/yaml.v3"
 	apiservercel "k8s.io/apiserver/pkg/cel"
+	"k8s.io/apimachinery/pkg/util/validation/field"
 
+	"github.com/openchoreo/openchoreo/api/v1alpha1"
 	"github.com/openchoreo/openchoreo/internal/template"
+	"github.com/openchoreo/openchoreo/internal/validation/component"
 	"github.com/openchoreo/openchoreo/internal/validation/component/cost"
+	"github.com/openchoreo/openchoreo/internal/validation/schemautil"
 )
 
 type constructCase struct {
@@ -25,15 +33,28 @@ type constructCase struct {
 }
 
 func main() {
-	mode := flag.String("mode", "differential", "Report mode: differential or corpus")
+	mode := flag.String("mode", "differential", "Report mode: differential, corpus, or lint")
+	format := flag.String("format", "text", "Output format: text or json")
+	policyBounds := flag.Bool("policy-bounds", false, "Enable policy bounds evaluation")
 	flag.Parse()
 
-	if *mode != "differential" {
-		fmt.Fprintf(os.Stderr, "unsupported mode: %s (supported: differential)\n", *mode)
+	switch *mode {
+	case "differential":
+		runDifferentialReport()
+	case "corpus", "lint":
+		files := flag.Args()
+		if len(files) == 0 && *mode == "corpus" {
+			files = []string{"samples"}
+		}
+		if len(files) == 0 {
+			fmt.Fprintln(os.Stderr, "Usage: costreport -mode lint [options] <files...>")
+			os.Exit(3)
+		}
+		runLintReport(files, *format, *policyBounds)
+	default:
+		fmt.Fprintf(os.Stderr, "unsupported mode: %s (supported: differential, corpus, lint)\n", *mode)
 		os.Exit(1)
 	}
-
-	runDifferentialReport()
 }
 
 func runDifferentialReport() {
@@ -216,5 +237,144 @@ func getConstructCases() []constructCase {
 				return env, itemsDecl, map[string]any{"items": slice}
 			},
 		},
+	}
+}
+
+type lintSummary struct {
+	Within int `json:"within"`
+	Over   int `json:"over"`
+	Unknown int `json:"unknown"`
+	Errors int `json:"errors"`
+}
+
+type lintReportOutput struct {
+	APIVersion string `json:"apiVersion"`
+	Kind       string `json:"kind"`
+	Name       string `json:"name"`
+	TotalCost  uint64 `json:"totalCost"`
+	Verdict    string `json:"verdict"`
+	Summary    lintSummary `json:"summary"`
+	Resources  []cost.ResourceEstimate `json:"resources"`
+}
+
+func runLintReport(paths []string, format string, policyBounds bool) {
+	var yamlFiles []string
+	for _, p := range paths {
+		stat, err := os.Stat(p)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "error stating %s: %v\n", p, err)
+			continue
+		}
+		if stat.IsDir() {
+			_ = filepath.Walk(p, func(subPath string, info os.FileInfo, err error) error {
+				if err == nil && !info.IsDir() && (strings.HasSuffix(subPath, ".yaml") || strings.HasSuffix(subPath, ".yml")) {
+					yamlFiles = append(yamlFiles, subPath)
+				}
+				return nil
+			})
+		} else {
+			yamlFiles = append(yamlFiles, p)
+		}
+	}
+
+	exitCode := 0
+	for _, file := range yamlFiles {
+		content, err := os.ReadFile(file)
+		if err != nil {
+			continue
+		}
+
+		docs := strings.Split(string(content), "\n---")
+		for _, doc := range docs {
+			var meta struct {
+				APIVersion string `yaml:"apiVersion"`
+				Kind       string `yaml:"kind"`
+				Metadata   struct {
+					Name string `yaml:"name"`
+				} `yaml:"metadata"`
+			}
+			if err := yaml.Unmarshal([]byte(doc), &meta); err != nil {
+				continue
+			}
+
+			var ctSpec v1alpha1.ComponentTypeSpec
+			switch meta.Kind {
+			case "ComponentType":
+				var ct v1alpha1.ComponentType
+				if err := yaml.Unmarshal([]byte(doc), &ct); err != nil {
+					continue
+				}
+				ctSpec = ct.Spec
+			case "ClusterComponentType":
+				var cct v1alpha1.ClusterComponentType
+				if err := yaml.Unmarshal([]byte(doc), &cct); err != nil {
+					continue
+				}
+				ctSpec = cct.Spec.ToComponentTypeSpec()
+			default:
+				continue
+			}
+
+			paramSchema, envConfigSchema, _ := schemautil.ExtractAndValidateSchemas(
+				ctSpec.Parameters, ctSpec.EnvironmentConfigs, field.NewPath("spec"),
+			)
+
+			val, err := component.NewCELValidator(component.ComponentTypeResource, component.SchemaOptions{
+				ParametersSchema:         paramSchema,
+				EnvironmentConfigsSchema: envConfigSchema,
+			})
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "failed to create validator for %s: %v\n", meta.Metadata.Name, err)
+				exitCode = 3
+				continue
+			}
+
+			aggregator := cost.NewTemplateAggregator(val)
+			tEst, err := aggregator.EstimateComponentTypeSpec(ctSpec)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "failed to estimate %s: %v\n", meta.Metadata.Name, err)
+				exitCode = 3
+				continue
+			}
+
+			var summary lintSummary
+			for _, r := range tEst.Resources {
+				switch r.Verdict {
+				case cost.VerdictWithinBudget:
+					summary.Within++
+				case cost.VerdictOverBudget:
+					summary.Over++
+				case cost.VerdictUnknown:
+					summary.Unknown++
+				}
+			}
+
+			if tEst.Verdict == cost.VerdictOverBudget && exitCode < 1 {
+				exitCode = 1
+			} else if tEst.Verdict == cost.VerdictUnknown && exitCode < 2 {
+				exitCode = 2
+			}
+
+			if format == "json" {
+				report := lintReportOutput{
+					APIVersion: meta.APIVersion,
+					Kind:       meta.Kind,
+					Name:       meta.Metadata.Name,
+					TotalCost:  tEst.TotalCost,
+					Verdict:    string(tEst.Verdict),
+					Summary:    summary,
+					Resources:  tEst.Resources,
+				}
+				data, _ := json.MarshalIndent(report, "", "  ")
+				fmt.Println(string(data))
+			} else {
+				fmt.Printf("[%s] %s/%s: Verdict=%s TotalCost=%d (within: %d, over: %d, unknown: %d)\n",
+					file, meta.Kind, meta.Metadata.Name, tEst.Verdict, tEst.TotalCost, summary.Within, summary.Over, summary.Unknown)
+			}
+		}
+	}
+
+	if exitCode != 0 {
+		os.Exit(exitCode)
 	}
 }
