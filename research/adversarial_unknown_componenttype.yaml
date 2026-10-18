@@ -1,0 +1,33 @@
+apiVersion: openchoreo.dev/v1alpha1
+kind: ComponentType
+metadata:
+  name: adversarial-unknown
+  namespace: default
+spec:
+  workloadType: deployment
+  parameters:
+    openAPIV3Schema:
+      type: object
+      properties:
+        unboundedList:
+          type: array
+          items:
+            type: string
+  resources:
+    - id: deployment
+      template:
+        apiVersion: apps/v1
+        kind: Deployment
+        metadata:
+          name: test
+        spec:
+          replicas: 1
+          template:
+            metadata:
+              labels:
+                app: test
+            spec:
+              containers:
+                - name: app
+                  image: test:latest
+                  command: ${parameters.unboundedList.map(a, parameters.unboundedList.map(b, parameters.unboundedList.map(c, a + b + c))).map(x, "run")}
