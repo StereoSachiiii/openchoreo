@@ -43,7 +43,7 @@ type Validator struct {
 
 func (v *Validator) getCostChecker() *cost.WebhookCostChecker {
 	if v.costChecker == nil {
-		v.costChecker = cost.NewWebhookCostChecker(cost.ModeWarn)
+		v.costChecker = cost.NewWebhookCostChecker("")
 	}
 	return v.costChecker
 }

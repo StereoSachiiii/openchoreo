@@ -13,7 +13,12 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
+	"os"
+	"path/filepath"
+
 	openchoreodevv1alpha1 "github.com/openchoreo/openchoreo/api/v1alpha1"
+	"github.com/openchoreo/openchoreo/internal/validation/component/cost"
+	k8syaml "sigs.k8s.io/yaml"
 )
 
 const (
@@ -1439,6 +1444,128 @@ var _ = Describe("ComponentType Webhook", func() {
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("postRenderValidations"))
 			Expect(err.Error()).To(ContainSubstring("var is required when forEach is specified"))
+		})
+	})
+
+	Context("CEL Cost Enforcement", func() {
+		It("admits shipped service.yaml under enforce mode", func() {
+			serviceYAMLPath := filepath.Join("..", "..", "..", "samples", "getting-started", "component-types", "service.yaml")
+			data, err := os.ReadFile(serviceYAMLPath)
+			Expect(err).NotTo(HaveOccurred())
+
+			var ct openchoreodevv1alpha1.ComponentType
+			jsonData, err := k8syaml.YAMLToJSON(data)
+			Expect(err).NotTo(HaveOccurred())
+			err = k8syaml.Unmarshal(jsonData, &ct)
+			Expect(err).NotTo(HaveOccurred())
+
+			enforceValidator := Validator{
+				costChecker: cost.NewWebhookCostChecker(cost.ModeEnforce),
+			}
+			warnings, err := enforceValidator.ValidateCreate(ctx, &ct)
+			Expect(err).NotTo(HaveOccurred(), "service.yaml must be admitted under enforce mode")
+			Expect(warnings).To(BeEmpty())
+		})
+
+		It("enforce mode rejects an over-budget template with an error (403)", func() {
+			ct := &openchoreodevv1alpha1.ComponentType{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "over-budget-ct",
+					Namespace: "default",
+				},
+				Spec: openchoreodevv1alpha1.ComponentTypeSpec{
+					WorkloadType: "deployment",
+					Resources: []openchoreodevv1alpha1.ResourceTemplate{
+						{
+							ID: "deployment",
+							Template: &runtime.RawExtension{
+								Raw: []byte(`{"apiVersion":"apps/v1","kind":"Deployment","metadata":{"name":"test"},"data":"${configurations.configs.envs.map(a, configurations.configs.envs.map(b, a.name + b.name)).size()}"}`),
+							},
+						},
+					},
+				},
+			}
+
+			enforceValidator := Validator{
+				costChecker: cost.NewWebhookCostChecker(cost.ModeEnforce),
+			}
+			warnings, err := enforceValidator.ValidateCreate(ctx, ct)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("CEL cost verdict: OVER BUDGET"))
+			Expect(warnings).To(BeEmpty())
+		})
+
+		It("warn mode admits an over-budget template with an admission warning", func() {
+			ct := &openchoreodevv1alpha1.ComponentType{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "warn-over-budget-ct",
+					Namespace: "default",
+				},
+				Spec: openchoreodevv1alpha1.ComponentTypeSpec{
+					WorkloadType: "deployment",
+					Resources: []openchoreodevv1alpha1.ResourceTemplate{
+						{
+							ID: "deployment",
+							Template: &runtime.RawExtension{
+								Raw: []byte(`{"apiVersion":"apps/v1","kind":"Deployment","metadata":{"name":"test"},"data":"${configurations.configs.envs.map(a, configurations.configs.envs.map(b, a.name + b.name)).size()}"}`),
+							},
+						},
+					},
+				},
+			}
+
+			warnValidator := Validator{
+				costChecker: cost.NewWebhookCostChecker(cost.ModeWarn),
+			}
+			warnings, err := warnValidator.ValidateCreate(ctx, ct)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(warnings).To(HaveLen(1))
+			Expect(warnings[0]).To(ContainSubstring("CEL cost verdict: OVER BUDGET"))
+		})
+
+		It("ratchet update allows updating a template without degrading verdict", func() {
+			oldCT := &openchoreodevv1alpha1.ComponentType{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "ratchet-ct",
+					Namespace: "default",
+				},
+				Spec: openchoreodevv1alpha1.ComponentTypeSpec{
+					WorkloadType: "deployment",
+					Resources: []openchoreodevv1alpha1.ResourceTemplate{
+						{
+							ID: "deployment",
+							Template: &runtime.RawExtension{
+								Raw: []byte(`{"apiVersion":"apps/v1","kind":"Deployment","metadata":{"name":"test-1"}}`),
+							},
+						},
+					},
+				},
+			}
+
+			newCT := &openchoreodevv1alpha1.ComponentType{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "ratchet-ct",
+					Namespace: "default",
+				},
+				Spec: openchoreodevv1alpha1.ComponentTypeSpec{
+					WorkloadType: "deployment",
+					Resources: []openchoreodevv1alpha1.ResourceTemplate{
+						{
+							ID: "deployment",
+							Template: &runtime.RawExtension{
+								Raw: []byte(`{"apiVersion":"apps/v1","kind":"Deployment","metadata":{"name":"test-2"}}`),
+							},
+						},
+					},
+				},
+			}
+
+			enforceValidator := Validator{
+				costChecker: cost.NewWebhookCostChecker(cost.ModeEnforce),
+			}
+			warnings, err := enforceValidator.ValidateUpdate(ctx, oldCT, newCT)
+			Expect(err).NotTo(HaveOccurred(), "ratchet update with same within-budget verdict must succeed")
+			Expect(warnings).To(BeEmpty())
 		})
 	})
 })

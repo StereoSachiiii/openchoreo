@@ -6,6 +6,7 @@ package cost
 import (
 	"context"
 	"fmt"
+	"os"
 	"time"
 
 	apiextschema "k8s.io/apiextensions-apiserver/pkg/apiserver/schema"
@@ -33,10 +34,16 @@ type WebhookCostChecker struct {
 	Timeout time.Duration
 }
 
-// NewWebhookCostChecker creates a cost checker with default mode (warn) and 2s timeout.
+// NewWebhookCostChecker creates a cost checker with default mode from CEL_COST_MODE (or warn) and 2s timeout.
 func NewWebhookCostChecker(mode Mode) *WebhookCostChecker {
 	if mode == "" {
-		mode = ModeWarn
+		envMode := Mode(os.Getenv("CEL_COST_MODE"))
+		switch envMode {
+		case ModeEnforce, ModeWarn, ModeOff:
+			mode = envMode
+		default:
+			mode = ModeWarn
+		}
 	}
 	return &WebhookCostChecker{
 		Mode:    mode,
