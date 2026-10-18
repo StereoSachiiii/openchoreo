@@ -72,7 +72,7 @@ func Test_fromGoType_SimpleStruct(t *testing.T) {
 	assert.Len(t, fields, 3)
 
 	// Verify field types
-	assert.Equal(t, apiservercel.StringType, fields["name"].Type)
+	assert.Equal(t, StringTypeWithLimit(defaultStringLimit), fields["name"].Type)
 	assert.Equal(t, apiservercel.IntType, fields["count"].Type)
 	assert.Equal(t, apiservercel.BoolType, fields["isEnabled"].Type)
 

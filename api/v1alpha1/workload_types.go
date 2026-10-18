@@ -72,10 +72,12 @@ type Container struct {
 
 	// Explicit environment variables.
 	// +optional
+	// +kubebuilder:validation:MaxItems=1024
 	Env []EnvVar `json:"env,omitempty"`
 
 	// File configurations.
 	// +optional
+	// +kubebuilder:validation:MaxItems=256
 	Files []FileVar `json:"files,omitempty"`
 }
 
@@ -120,6 +122,7 @@ type WorkloadEndpoint struct {
 	// Every endpoint always gets project visibility. This array adds extra scopes.
 	// +optional
 	// +listType=set
+	// +kubebuilder:validation:MaxItems=4
 	Visibility []EndpointVisibility `json:"visibility,omitempty"`
 
 	// Type indicates the protocol/technology of the endpoint.
@@ -303,6 +306,7 @@ type WorkloadTemplateSpec struct {
 	// Endpoints define simple network endpoints for basic port exposure.
 	// The key is the endpoint name, and the value is the endpoint specification.
 	// +optional
+	// +kubebuilder:validation:MaxProperties=128
 	Endpoints map[string]WorkloadEndpoint `json:"endpoints,omitempty"`
 
 	// Dependencies define the dependencies of this workload on other components.

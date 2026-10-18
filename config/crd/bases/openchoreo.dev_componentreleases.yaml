@@ -995,6 +995,7 @@ spec:
                           x-kubernetes-validations:
                           - message: value and valueFrom are mutually exclusive
                             rule: '!(has(self.value) && has(self.valueFrom))'
+                        maxItems: 1024
                         type: array
                       files:
                         description: File configurations.
@@ -1039,6 +1040,7 @@ spec:
                           x-kubernetes-validations:
                           - message: value and valueFrom are mutually exclusive
                             rule: '!(has(self.value) && has(self.valueFrom))'
+                        maxItems: 256
                         type: array
                       image:
                         description: OCI image to run (digest or tag).
@@ -1225,6 +1227,7 @@ spec:
                             - internal
                             - external
                             type: string
+                          maxItems: 4
                           type: array
                           x-kubernetes-list-type: set
                       required:
@@ -1234,6 +1237,7 @@ spec:
                     description: |-
                       Endpoints define simple network endpoints for basic port exposure.
                       The key is the endpoint name, and the value is the endpoint specification.
+                    maxProperties: 128
                     type: object
                   source:
                     description: |-
