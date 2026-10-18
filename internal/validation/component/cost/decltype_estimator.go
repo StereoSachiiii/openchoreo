@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/google/cel-go/checker"
+	"github.com/google/cel-go/common/types"
 	apiservercel "k8s.io/apiserver/pkg/cel"
 )
 
@@ -26,6 +27,19 @@ func NewDeclTypeCostEstimator(roots map[string]*apiservercel.DeclType) *DeclType
 	}
 }
 
+// WithRootType returns a shallow copy of DeclTypeCostEstimator with an additional or overridden root type.
+func (e *DeclTypeCostEstimator) WithRootType(name string, t *apiservercel.DeclType) *DeclTypeCostEstimator {
+	newRoots := make(map[string]*apiservercel.DeclType, len(e.rootTypes)+1)
+	for k, v := range e.rootTypes {
+		newRoots[k] = v
+	}
+	newRoots[name] = t
+	return &DeclTypeCostEstimator{
+		rootTypes:    newRoots,
+		policyBounds: e.policyBounds,
+	}
+}
+
 // EstimateSize estimates the size of a collection or string node by walking the DeclType hierarchy.
 func (e *DeclTypeCostEstimator) EstimateSize(element checker.AstNode) *checker.SizeEstimate {
 	if element == nil {
@@ -34,12 +48,18 @@ func (e *DeclTypeCostEstimator) EstimateSize(element checker.AstNode) *checker.S
 
 	path := element.Path()
 	if len(path) == 0 {
+		if element.Type() == types.StringType {
+			return &checker.SizeEstimate{Min: 0, Max: 253}
+		}
 		return nil
 	}
 
 	rootName := path[0]
 	rootNode, ok := e.rootTypes[rootName]
 	if !ok || rootNode == nil {
+		if element.Type() == types.StringType {
+			return &checker.SizeEstimate{Min: 0, Max: 253}
+		}
 		return nil
 	}
 
@@ -77,15 +97,19 @@ func (e *DeclTypeCostEstimator) EstimateSize(element checker.AstNode) *checker.S
 		}
 	}
 
-	if currentNode == nil || currentNode.MaxElements <= 0 {
-		// If string has 0 MaxElements (e.g. bare apiservercel.StringType), apply standard fallback limit (1024)
-		if currentNode == apiservercel.StringType {
-			return &checker.SizeEstimate{Min: 0, Max: 1024}
-		}
+	if currentNode == nil {
 		return nil
 	}
 
-	return &checker.SizeEstimate{Min: 0, Max: uint64(currentNode.MaxElements)}
+	if currentNode.MaxElements > 0 {
+		return &checker.SizeEstimate{Min: 0, Max: uint64(currentNode.MaxElements)}
+	}
+
+	if currentNode == apiservercel.StringType {
+		return &checker.SizeEstimate{Min: 0, Max: 253}
+	}
+
+	return nil
 }
 
 // EstimateCallCost calculates static cost for built-in and OpenChoreo custom functions (oc_*).
@@ -150,6 +174,19 @@ func (e *DeclTypeCostEstimator) EstimateCallCost(function, overloadID string, ta
 				Max: 1,
 			},
 			ResultSize: &checker.SizeEstimate{Min: 0, Max: 0},
+		}
+
+	case "distinct":
+		if target == nil || (*target).ComputedSize() == nil {
+			return nil
+		}
+		targetSz := (*target).ComputedSize().Max
+		return &checker.CallEstimate{
+			CostEstimate: checker.CostEstimate{
+				Min: 1,
+				Max: 1 + targetSz,
+			},
+			ResultSize: &checker.SizeEstimate{Min: 0, Max: targetSz},
 		}
 
 	case "flatten":
