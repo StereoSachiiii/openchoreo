@@ -152,6 +152,12 @@ func extendEnvWithForEach(env *cel.Env, info *forEachInfo, typeProvider *apiserv
 		return extendEnvWithMapForEach(env, info, typeProvider)
 	}
 
+	if info.Type == forEachList && info.ElementType != nil && typeProvider != nil {
+		if dt, found := typeProvider.FindDeclType(info.ElementType.String()); found {
+			info.VarDeclType = dt
+		}
+	}
+
 	return env.Extend(
 		cel.Variable(info.VarName, info.VarType),
 	)

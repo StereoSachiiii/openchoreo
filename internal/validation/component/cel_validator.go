@@ -146,8 +146,15 @@ func (v *CELValidator) GetTypeProvider() *apiservercel.DeclTypeProvider {
 // extending the base environment with loop variables when forEach is configured.
 // This is the single environment factory specified in Project 701 §4.1.
 func (v *CELValidator) ResourceEnvironment(forEachExpr string, varName string) (*cel.Env, error) {
+	env, _, err := v.ResourceEnvironmentWithDeclType(forEachExpr, varName)
+	return env, err
+}
+
+// ResourceEnvironmentWithDeclType returns the CEL environment and the loop variable's DeclType (if any)
+// for a specific resource, extending the base environment with loop variables when forEach is configured.
+func (v *CELValidator) ResourceEnvironmentWithDeclType(forEachExpr string, varName string) (*cel.Env, *apiservercel.DeclType, error) {
 	if forEachExpr == "" {
-		return v.baseEnv, nil
+		return v.baseEnv, nil, nil
 	}
 
 	// Unwrap template expression ${...} if wrapped
@@ -160,15 +167,16 @@ func (v *CELValidator) ResourceEnvironment(forEachExpr string, varName string) (
 
 	info, err := analyzeForEachExpression(expr, varName, v.baseEnv)
 	if err != nil {
-		return nil, fmt.Errorf("failed to analyze forEach expression: %w", err)
+		return nil, nil, fmt.Errorf("failed to analyze forEach expression: %w", err)
 	}
 	if info == nil {
-		return v.baseEnv, nil
+		return v.baseEnv, nil, nil
 	}
 
 	extEnv, err := extendEnvWithForEach(v.baseEnv, info, v.typeProvider)
 	if err != nil {
-		return nil, fmt.Errorf("failed to extend CEL environment with forEach: %w", err)
+		return nil, nil, fmt.Errorf("failed to extend CEL environment with forEach: %w", err)
 	}
-	return extEnv, nil
+	return extEnv, info.VarDeclType, nil
 }
+

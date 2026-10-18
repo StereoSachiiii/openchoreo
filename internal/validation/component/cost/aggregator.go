@@ -92,6 +92,11 @@ func NewTemplateAggregator(val *component.CELValidator) *TemplateAggregator {
 
 // EstimateExpression estimates a single CEL expression in a given environment.
 func (a *TemplateAggregator) EstimateExpression(expr string, env *cel.Env, fieldPath string) ExpressionEstimate {
+	return a.EstimateExpressionWithCoster(expr, env, a.coster, fieldPath)
+}
+
+// EstimateExpressionWithCoster estimates a single CEL expression in a given environment using a custom CostEstimator.
+func (a *TemplateAggregator) EstimateExpressionWithCoster(expr string, env *cel.Env, coster checker.CostEstimator, fieldPath string) ExpressionEstimate {
 	ast, issues := env.Compile(expr)
 	if issues != nil && issues.Err() != nil {
 		return ExpressionEstimate{
@@ -103,7 +108,7 @@ func (a *TemplateAggregator) EstimateExpression(expr string, env *cel.Env, field
 		}
 	}
 
-	est, err := checker.Cost(ast.NativeRep(), a.coster)
+	est, err := checker.Cost(ast.NativeRep(), coster)
 	if err != nil {
 		return ExpressionEstimate{
 			FieldPath:  fieldPath,
@@ -145,6 +150,7 @@ func (a *TemplateAggregator) EstimateResource(res v1alpha1.ResourceTemplate) (Re
 	}
 
 	baseEnv := a.validator.GetBaseEnv()
+	scopedCoster := a.coster
 
 	// 1. includeWhen evaluated in base environment (worst case: taken as true)
 	if res.IncludeWhen != "" {
@@ -160,6 +166,7 @@ func (a *TemplateAggregator) EstimateResource(res v1alpha1.ResourceTemplate) (Re
 	// 2. forEach expression evaluation & loop bound calculation
 	loopBound := uint64(1)
 	loopVarEnv := baseEnv
+	var forEachEstCost uint64
 
 	if res.ForEach != "" {
 		inner := unwrapCEL(res.ForEach)
@@ -168,6 +175,7 @@ func (a *TemplateAggregator) EstimateResource(res v1alpha1.ResourceTemplate) (Re
 
 		// Estimate forEach collection expression itself
 		forEachEst := a.EstimateExpression(inner, baseEnv, fmt.Sprintf("resources[%s].forEach", res.ID))
+		forEachEstCost = forEachEst.Cost
 		out.Expressions = append(out.Expressions, forEachEst)
 		if forEachEst.State == StateUnknown {
 			out.State = StateUnknown
@@ -177,19 +185,47 @@ func (a *TemplateAggregator) EstimateResource(res v1alpha1.ResourceTemplate) (Re
 		ast, _ := baseEnv.Compile(inner)
 		if ast != nil {
 			var path []string
+			shapeValid := true
 			if innerTrimmed := strings.TrimSpace(inner); innerTrimmed != "" {
-				path = strings.Split(innerTrimmed, ".")
+				for _, part := range strings.Split(innerTrimmed, ".") {
+					if strings.Contains(part, "(") {
+						idx := strings.Index(part, "(")
+						callName := part[:idx]
+						if callName == "transformMap" || callName == "filter" || callName == "map" || callName == "distinct" {
+							// Comprehension over the preceding path; the base path before this comprehension determines the size bound
+							break
+						}
+						closeIdx := strings.LastIndex(part, ")")
+						if closeIdx == -1 {
+							shapeValid = false
+							break
+						}
+						argsStr := strings.TrimSpace(part[idx+1 : closeIdx])
+						if strings.Contains(argsStr, ".") || strings.Contains(argsStr, "(") {
+							shapeValid = false
+							break
+						}
+						part = callName
+					}
+					path = append(path, part)
+				}
 			}
-			sizeEst := a.coster.EstimateSize(pathAstNode{path: path})
-			if sizeEst != nil && sizeEst.Max > 0 && sizeEst.Max < math.MaxUint64 {
-				if sizeEst.Max > MaxForEachItemsPerLoop {
-					loopBound = MaxForEachItemsPerLoop
-					out.ForEachCapExceeded = true
+			if shapeValid && len(path) > 0 {
+				sizeEst := a.coster.EstimateSize(pathAstNode{path: path})
+				if sizeEst != nil && sizeEst.Max > 0 && sizeEst.Max < math.MaxUint64 {
+					if sizeEst.Max > MaxForEachItemsPerLoop {
+						loopBound = MaxForEachItemsPerLoop
+						out.ForEachCapExceeded = true
+					} else {
+						loopBound = sizeEst.Max
+					}
 				} else {
-					loopBound = sizeEst.Max
+					// Unsizable collection defaults to cap of 100 but marks state as UNKNOWN
+					loopBound = MaxForEachItemsPerLoop
+					out.State = StateUnknown
 				}
 			} else {
-				// Unsizable collection defaults to cap of 100 but marks state as UNKNOWN
+				// Unrecognized shape evaluates to UNKNOWN, never guess
 				loopBound = MaxForEachItemsPerLoop
 				out.State = StateUnknown
 			}
@@ -199,11 +235,14 @@ func (a *TemplateAggregator) EstimateResource(res v1alpha1.ResourceTemplate) (Re
 		}
 
 		// Create extended resource environment for loop body
-		extEnv, err := a.validator.ResourceEnvironment(res.ForEach, res.Var)
+		extEnv, loopVarDeclType, err := a.validator.ResourceEnvironmentWithDeclType(res.ForEach, res.Var)
 		if err != nil {
 			return out, fmt.Errorf("failed to get resource environment for %s: %w", res.ID, err)
 		}
 		loopVarEnv = extEnv
+		if loopVarDeclType != nil && res.Var != "" {
+			scopedCoster = scopedCoster.WithRootType(res.Var, loopVarDeclType)
+		}
 	}
 	out.LoopBound = loopBound
 
@@ -212,7 +251,7 @@ func (a *TemplateAggregator) EstimateResource(res v1alpha1.ResourceTemplate) (Re
 	if res.Template != nil && len(res.Template.Raw) > 0 {
 		var data any
 		if err := json.Unmarshal(res.Template.Raw, &data); err == nil {
-			a.walkExpressions(data, fmt.Sprintf("resources[%s].template", res.ID), loopVarEnv, &bodyExpressions)
+			a.walkExpressionsWithCoster(data, fmt.Sprintf("resources[%s].template", res.ID), loopVarEnv, scopedCoster, &bodyExpressions)
 		}
 	}
 
@@ -228,11 +267,7 @@ func (a *TemplateAggregator) EstimateResource(res v1alpha1.ResourceTemplate) (Re
 	out.BodyCostPerIter = bodyCostPerIter
 
 	// 5. Total cost = includeWhen + forEach.expr + M * bodyCostPerIter
-	total := out.IncludeWhenCost
-	if res.ForEach != "" && len(out.Expressions) > 0 {
-		// Include the forEach expression cost (already in out.Expressions)
-		total = satAdd(total, out.Expressions[1].Cost)
-	}
+	total := satAdd(out.IncludeWhenCost, forEachEstCost)
 
 	scaledBody := saturatingMul(loopBound, bodyCostPerIter)
 	total = satAdd(total, scaledBody)
@@ -319,7 +354,13 @@ func (a *TemplateAggregator) EstimateComponentTypeSpec(spec v1alpha1.ComponentTy
 }
 
 // walkExpressions recursively locates and estimates CEL expressions inside template JSON.
+// walkExpressions recursively locates and estimates CEL expressions inside template JSON using default coster.
 func (a *TemplateAggregator) walkExpressions(data any, path string, env *cel.Env, out *[]ExpressionEstimate) {
+	a.walkExpressionsWithCoster(data, path, env, a.coster, out)
+}
+
+// walkExpressionsWithCoster recursively locates and estimates CEL expressions inside template JSON using a specified coster.
+func (a *TemplateAggregator) walkExpressionsWithCoster(data any, path string, env *cel.Env, coster checker.CostEstimator, out *[]ExpressionEstimate) {
 	switch v := data.(type) {
 	case string:
 		matches, err := template.FindCELExpressions(v)
@@ -329,7 +370,7 @@ func (a *TemplateAggregator) walkExpressions(data any, path string, env *cel.Env
 
 		if len(matches) == 1 && strings.TrimSpace(v) == matches[0].FullExpr {
 			// Standalone expression
-			est := a.EstimateExpression(matches[0].InnerExpr, env, path)
+			est := a.EstimateExpressionWithCoster(matches[0].InnerExpr, env, coster, path)
 			*out = append(*out, est)
 			return
 		}
@@ -338,7 +379,7 @@ func (a *TemplateAggregator) walkExpressions(data any, path string, env *cel.Env
 		var sum uint64 = uint64(len(matches)) * InterpolationBaseCharge
 		state := StateKnown
 		for _, m := range matches {
-			est := a.EstimateExpression(m.InnerExpr, env, path)
+			est := a.EstimateExpressionWithCoster(m.InnerExpr, env, coster, path)
 			sum = satAdd(sum, est.Cost)
 			if est.State == StateUnknown {
 				state = StateUnknown
@@ -365,18 +406,18 @@ func (a *TemplateAggregator) walkExpressions(data any, path string, env *cel.Env
 				matches, err := template.FindCELExpressions(k)
 				if err == nil {
 					for _, m := range matches {
-						est := a.EstimateExpression(m.InnerExpr, env, fmt.Sprintf("%s[key]", path))
+						est := a.EstimateExpressionWithCoster(m.InnerExpr, env, coster, fmt.Sprintf("%s[key]", path))
 						*out = append(*out, est)
 					}
 				}
 			}
-			a.walkExpressions(val, childPath, env, out)
+			a.walkExpressionsWithCoster(val, childPath, env, coster, out)
 		}
 
 	case []any:
 		for i, elem := range v {
 			childPath := fmt.Sprintf("%s[%d]", path, i)
-			a.walkExpressions(elem, childPath, env, out)
+			a.walkExpressionsWithCoster(elem, childPath, env, coster, out)
 		}
 	}
 }
