@@ -66,6 +66,53 @@ This directory contains standalone manifests to demonstrate live admission rejec
 
 ---
 
+## 4b. Container Files Oversized Collection Rejection (OpenAPI Validation)
+
+- **File:** [`research/adversarial_oversized_files_257.yaml`](file:///c:/Users/sachin%20lakshitha/openchoreo/research/adversarial_oversized_files_257.yaml)
+- **Description:** A `Workload` resource defining $257$ files mounted into the container. The API server OpenAPI schema validates `maxItems: 256` on `spec.container.files` and rejects the object directly.
+- **Command:**
+  ```powershell
+  kubectl apply -f research/adversarial_oversized_files_257.yaml
+  ```
+- **Expected Response:**
+  ```text
+  The Workload "adversarial-oversized-files-257" is invalid:
+  * spec.container.files: Too many: 257: must have at most 256 items
+  ```
+
+---
+
+## 4c. Workload Endpoints Oversized Map Rejection (OpenAPI Validation)
+
+- **File:** [`research/adversarial_oversized_endpoints_129.yaml`](file:///c:/Users/sachin%20lakshitha/openchoreo/research/adversarial_oversized_endpoints_129.yaml)
+- **Description:** A `Workload` resource defining $129$ exposed network endpoints. The API server OpenAPI schema validates `maxProperties: 128` on `spec.endpoints` and rejects the object directly.
+- **Command:**
+  ```powershell
+  kubectl apply -f research/adversarial_oversized_endpoints_129.yaml
+  ```
+- **Expected Response:**
+  ```text
+  The Workload "adversarial-oversized-endpoints-129" is invalid:
+  * spec.endpoints: Too many: 129: must have at most 128 items
+  ```
+
+---
+
+## 4d. Dependency Endpoints Oversized Collection Rejection (OpenAPI Validation)
+
+- **File:** [`research/adversarial_oversized_dep_endpoints_51.yaml`](file:///c:/Users/sachin%20lakshitha/openchoreo/research/adversarial_oversized_dep_endpoints_51.yaml)
+- **Description:** A `Workload` resource defining $51$ consumed endpoint dependencies. The API server OpenAPI schema validates `maxItems: 50` on `spec.dependencies.endpoints` and rejects the object directly.
+- **Command:**
+  ```powershell
+  kubectl apply -f research/adversarial_oversized_dep_endpoints_51.yaml
+  ```
+- **Expected Response:**
+  ```text
+  The Workload "adversarial-oversized-dep-endpoints-51" is invalid:
+  * spec.dependencies.endpoints: Too many: 51: must have at most 50 items
+  ```
+
+
 ## 5. Demonstrating `warn` Mode vs `enforce` Mode
 
 Switch the running controller manager to `warn` mode:

@@ -1,0 +1,268 @@
+apiVersion: openchoreo.dev/v1alpha1
+kind: Workload
+metadata:
+  name: adversarial-oversized-dep-endpoints-51
+  namespace: default
+spec:
+  container:
+    image: nginx:alpine
+  dependencies:
+    endpoints:
+    - component: target-comp-0
+      envBindings:
+        address: SERVICE_0_URL
+      name: http
+      visibility: project
+    - component: target-comp-1
+      envBindings:
+        address: SERVICE_1_URL
+      name: http
+      visibility: project
+    - component: target-comp-2
+      envBindings:
+        address: SERVICE_2_URL
+      name: http
+      visibility: project
+    - component: target-comp-3
+      envBindings:
+        address: SERVICE_3_URL
+      name: http
+      visibility: project
+    - component: target-comp-4
+      envBindings:
+        address: SERVICE_4_URL
+      name: http
+      visibility: project
+    - component: target-comp-5
+      envBindings:
+        address: SERVICE_5_URL
+      name: http
+      visibility: project
+    - component: target-comp-6
+      envBindings:
+        address: SERVICE_6_URL
+      name: http
+      visibility: project
+    - component: target-comp-7
+      envBindings:
+        address: SERVICE_7_URL
+      name: http
+      visibility: project
+    - component: target-comp-8
+      envBindings:
+        address: SERVICE_8_URL
+      name: http
+      visibility: project
+    - component: target-comp-9
+      envBindings:
+        address: SERVICE_9_URL
+      name: http
+      visibility: project
+    - component: target-comp-10
+      envBindings:
+        address: SERVICE_10_URL
+      name: http
+      visibility: project
+    - component: target-comp-11
+      envBindings:
+        address: SERVICE_11_URL
+      name: http
+      visibility: project
+    - component: target-comp-12
+      envBindings:
+        address: SERVICE_12_URL
+      name: http
+      visibility: project
+    - component: target-comp-13
+      envBindings:
+        address: SERVICE_13_URL
+      name: http
+      visibility: project
+    - component: target-comp-14
+      envBindings:
+        address: SERVICE_14_URL
+      name: http
+      visibility: project
+    - component: target-comp-15
+      envBindings:
+        address: SERVICE_15_URL
+      name: http
+      visibility: project
+    - component: target-comp-16
+      envBindings:
+        address: SERVICE_16_URL
+      name: http
+      visibility: project
+    - component: target-comp-17
+      envBindings:
+        address: SERVICE_17_URL
+      name: http
+      visibility: project
+    - component: target-comp-18
+      envBindings:
+        address: SERVICE_18_URL
+      name: http
+      visibility: project
+    - component: target-comp-19
+      envBindings:
+        address: SERVICE_19_URL
+      name: http
+      visibility: project
+    - component: target-comp-20
+      envBindings:
+        address: SERVICE_20_URL
+      name: http
+      visibility: project
+    - component: target-comp-21
+      envBindings:
+        address: SERVICE_21_URL
+      name: http
+      visibility: project
+    - component: target-comp-22
+      envBindings:
+        address: SERVICE_22_URL
+      name: http
+      visibility: project
+    - component: target-comp-23
+      envBindings:
+        address: SERVICE_23_URL
+      name: http
+      visibility: project
+    - component: target-comp-24
+      envBindings:
+        address: SERVICE_24_URL
+      name: http
+      visibility: project
+    - component: target-comp-25
+      envBindings:
+        address: SERVICE_25_URL
+      name: http
+      visibility: project
+    - component: target-comp-26
+      envBindings:
+        address: SERVICE_26_URL
+      name: http
+      visibility: project
+    - component: target-comp-27
+      envBindings:
+        address: SERVICE_27_URL
+      name: http
+      visibility: project
+    - component: target-comp-28
+      envBindings:
+        address: SERVICE_28_URL
+      name: http
+      visibility: project
+    - component: target-comp-29
+      envBindings:
+        address: SERVICE_29_URL
+      name: http
+      visibility: project
+    - component: target-comp-30
+      envBindings:
+        address: SERVICE_30_URL
+      name: http
+      visibility: project
+    - component: target-comp-31
+      envBindings:
+        address: SERVICE_31_URL
+      name: http
+      visibility: project
+    - component: target-comp-32
+      envBindings:
+        address: SERVICE_32_URL
+      name: http
+      visibility: project
+    - component: target-comp-33
+      envBindings:
+        address: SERVICE_33_URL
+      name: http
+      visibility: project
+    - component: target-comp-34
+      envBindings:
+        address: SERVICE_34_URL
+      name: http
+      visibility: project
+    - component: target-comp-35
+      envBindings:
+        address: SERVICE_35_URL
+      name: http
+      visibility: project
+    - component: target-comp-36
+      envBindings:
+        address: SERVICE_36_URL
+      name: http
+      visibility: project
+    - component: target-comp-37
+      envBindings:
+        address: SERVICE_37_URL
+      name: http
+      visibility: project
+    - component: target-comp-38
+      envBindings:
+        address: SERVICE_38_URL
+      name: http
+      visibility: project
+    - component: target-comp-39
+      envBindings:
+        address: SERVICE_39_URL
+      name: http
+      visibility: project
+    - component: target-comp-40
+      envBindings:
+        address: SERVICE_40_URL
+      name: http
+      visibility: project
+    - component: target-comp-41
+      envBindings:
+        address: SERVICE_41_URL
+      name: http
+      visibility: project
+    - component: target-comp-42
+      envBindings:
+        address: SERVICE_42_URL
+      name: http
+      visibility: project
+    - component: target-comp-43
+      envBindings:
+        address: SERVICE_43_URL
+      name: http
+      visibility: project
+    - component: target-comp-44
+      envBindings:
+        address: SERVICE_44_URL
+      name: http
+      visibility: project
+    - component: target-comp-45
+      envBindings:
+        address: SERVICE_45_URL
+      name: http
+      visibility: project
+    - component: target-comp-46
+      envBindings:
+        address: SERVICE_46_URL
+      name: http
+      visibility: project
+    - component: target-comp-47
+      envBindings:
+        address: SERVICE_47_URL
+      name: http
+      visibility: project
+    - component: target-comp-48
+      envBindings:
+        address: SERVICE_48_URL
+      name: http
+      visibility: project
+    - component: target-comp-49
+      envBindings:
+        address: SERVICE_49_URL
+      name: http
+      visibility: project
+    - component: target-comp-50
+      envBindings:
+        address: SERVICE_50_URL
+      name: http
+      visibility: project
+  owner:
+    componentName: adversarial-oversized-dep-endpoints-51
+    projectName: default

@@ -6,12 +6,14 @@ package cost_test
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"math"
 	"os"
 	"reflect"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/validation/field"
 	k8syaml "sigs.k8s.io/yaml"
@@ -341,5 +343,132 @@ func TestAggregator_ForEachPathEdgeCases(t *testing.T) {
 	est2, _ := agg.EstimateResource(resNestedParens)
 	assert.Equal(t, cost.StateUnknown, est2.State, "nested parens must fall back to UNKNOWN")
 	assert.Equal(t, cost.MaxForEachItemsPerLoop, est2.LoopBound)
+}
+
+func TestWebhookCostChecker_DetailedDiagnostics(t *testing.T) {
+	checker := cost.NewWebhookCostChecker(cost.ModeEnforce)
+
+	// Construct ComponentType with unbounded list parameter
+	ct := &v1alpha1.ComponentType{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "test-diagnostic-unknown",
+		},
+		Spec: v1alpha1.ComponentTypeSpec{
+			WorkloadType: "deployment",
+			Resources: []v1alpha1.ResourceTemplate{
+				{
+					ID: "test-res",
+					Template: &runtime.RawExtension{
+						Raw: []byte(`{"command": "${parameters.unboundedList.map(a, a + '-suff')}"}`),
+					},
+				},
+			},
+		},
+	}
+
+	_, err := checker.ValidateComponentTypeCreate(context.Background(), ct, nil, nil)
+	assert.Error(t, err)
+	errMsg := err.Error()
+
+	// Assert that the message identifies the verdict, the offending expression, field path, and hint
+	assert.Contains(t, errMsg, `ComponentType "test-diagnostic-unknown" CEL cost verdict: UNKNOWN`)
+	assert.Contains(t, errMsg, `Resource "test-res"`)
+	assert.Contains(t, errMsg, `parameters.unboundedList.map(a, a + '-suff')`)
+	assert.Contains(t, errMsg, `resources[test-res].template.command`)
+	assert.Contains(t, errMsg, `add 'maxItems' to array parameters in spec.parameters.openAPIV3Schema`)
+}
+
+func TestWebhookCostChecker_TimeoutBehavior(t *testing.T) {
+	ct := &v1alpha1.ComponentType{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "test-timeout-ct",
+		},
+		Spec: v1alpha1.ComponentTypeSpec{
+			WorkloadType: "deployment",
+		},
+	}
+
+	// 1. Enforce mode with zero timeout -> fails closed with error
+	checkerEnforce := cost.NewWebhookCostChecker(cost.ModeEnforce)
+	checkerEnforce.Timeout = 0 // Immediate timeout
+	warningsEnforce, errEnforce := checkerEnforce.ValidateComponentTypeCreate(context.Background(), ct, nil, nil)
+	assert.Error(t, errEnforce)
+	assert.Contains(t, errEnforce.Error(), "evaluation deadline of 0s exceeded")
+	assert.Empty(t, warningsEnforce)
+
+	// 2. Warn mode with zero timeout -> admits with warning
+	checkerWarn := cost.NewWebhookCostChecker(cost.ModeWarn)
+	checkerWarn.Timeout = 0 // Immediate timeout
+	warningsWarn, errWarn := checkerWarn.ValidateComponentTypeCreate(context.Background(), ct, nil, nil)
+	assert.NoError(t, errWarn)
+	assert.Contains(t, warningsWarn[0], "evaluation deadline exceeded")
+}
+
+func TestValidateTraitCreate_CostEnforcement(t *testing.T) {
+	// Construct an over-budget Trait with N=100 cubic patch expression (>2M operations)
+	var loopList []int
+	for i := 0; i < 100; i++ {
+		loopList = append(loopList, i)
+	}
+	loopBytes, err := json.Marshal(loopList)
+	assert.NoError(t, err)
+
+	trait := &v1alpha1.Trait{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "test-cubic-trait",
+		},
+		Spec: v1alpha1.TraitSpec{
+			Patches: []v1alpha1.TraitPatch{
+				{
+					Target: v1alpha1.PatchTarget{
+						Group:   "apps",
+						Version: "v1",
+						Kind:    "Deployment",
+					},
+					Operations: []v1alpha1.JSONPatchOperation{
+						{
+							Op:   "add",
+							Path: "/metadata/annotations/cost",
+							Value: &runtime.RawExtension{
+								Raw: func() []byte {
+									s := fmt.Sprintf("${%s.all(i, %s.all(j, %s.all(k, true)))}", string(loopBytes), string(loopBytes), string(loopBytes))
+									b, _ := json.Marshal(s)
+									return b
+								}(),
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	val, err := component.NewCELValidator(component.TraitResource, component.SchemaOptions{})
+	assert.NoError(t, err)
+	agg := cost.NewTemplateAggregator(val)
+	rawEst, rawErr := agg.EstimateTrait(trait)
+	t.Logf("rawEst: TotalCost=%d, State=%s, Verdict=%s, rawErr=%v, resCount=%d", rawEst.TotalCost, rawEst.State, rawEst.Verdict, rawErr, len(rawEst.Resources))
+	if len(rawEst.Resources) > 0 {
+		t.Logf("res[0]: TotalCost=%d, ExprCount=%d", rawEst.Resources[0].TotalCost, len(rawEst.Resources[0].Expressions))
+		for _, e := range rawEst.Resources[0].Expressions {
+			t.Logf("  expr: %s cost=%d state=%s verdict=%s", e.Expression, e.Cost, e.State, e.Verdict)
+		}
+	}
+
+	// 1. Enforce mode rejects over-budget Trait
+	checkerEnforce := cost.NewWebhookCostChecker(cost.ModeEnforce)
+	warningsEnforce, errEnforce := checkerEnforce.ValidateTraitCreate(context.Background(), trait, nil, nil)
+	t.Logf("errEnforce: %v, warnings: %v", errEnforce, warningsEnforce)
+	if assert.Error(t, errEnforce) {
+		assert.Contains(t, errEnforce.Error(), `Trait "test-cubic-trait" CEL cost verdict: OVER BUDGET`)
+	}
+	assert.Empty(t, warningsEnforce)
+
+	// 2. Warn mode admits with warning
+	checkerWarn := cost.NewWebhookCostChecker(cost.ModeWarn)
+	warningsWarn, errWarn := checkerWarn.ValidateTraitCreate(context.Background(), trait, nil, nil)
+	assert.NoError(t, errWarn)
+	assert.NotEmpty(t, warningsWarn)
+	assert.Contains(t, warningsWarn[0], `Trait "test-cubic-trait" CEL cost verdict: OVER BUDGET`)
 }
 

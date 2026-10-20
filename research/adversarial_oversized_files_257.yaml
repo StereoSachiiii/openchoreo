@@ -1,0 +1,783 @@
+apiVersion: openchoreo.dev/v1alpha1
+kind: Workload
+metadata:
+  name: adversarial-oversized-files-257
+  namespace: default
+spec:
+  container:
+    files:
+    - key: file_0.txt
+      mountPath: /etc/config/file_0.txt
+      value: content_0
+    - key: file_1.txt
+      mountPath: /etc/config/file_1.txt
+      value: content_1
+    - key: file_2.txt
+      mountPath: /etc/config/file_2.txt
+      value: content_2
+    - key: file_3.txt
+      mountPath: /etc/config/file_3.txt
+      value: content_3
+    - key: file_4.txt
+      mountPath: /etc/config/file_4.txt
+      value: content_4
+    - key: file_5.txt
+      mountPath: /etc/config/file_5.txt
+      value: content_5
+    - key: file_6.txt
+      mountPath: /etc/config/file_6.txt
+      value: content_6
+    - key: file_7.txt
+      mountPath: /etc/config/file_7.txt
+      value: content_7
+    - key: file_8.txt
+      mountPath: /etc/config/file_8.txt
+      value: content_8
+    - key: file_9.txt
+      mountPath: /etc/config/file_9.txt
+      value: content_9
+    - key: file_10.txt
+      mountPath: /etc/config/file_10.txt
+      value: content_10
+    - key: file_11.txt
+      mountPath: /etc/config/file_11.txt
+      value: content_11
+    - key: file_12.txt
+      mountPath: /etc/config/file_12.txt
+      value: content_12
+    - key: file_13.txt
+      mountPath: /etc/config/file_13.txt
+      value: content_13
+    - key: file_14.txt
+      mountPath: /etc/config/file_14.txt
+      value: content_14
+    - key: file_15.txt
+      mountPath: /etc/config/file_15.txt
+      value: content_15
+    - key: file_16.txt
+      mountPath: /etc/config/file_16.txt
+      value: content_16
+    - key: file_17.txt
+      mountPath: /etc/config/file_17.txt
+      value: content_17
+    - key: file_18.txt
+      mountPath: /etc/config/file_18.txt
+      value: content_18
+    - key: file_19.txt
+      mountPath: /etc/config/file_19.txt
+      value: content_19
+    - key: file_20.txt
+      mountPath: /etc/config/file_20.txt
+      value: content_20
+    - key: file_21.txt
+      mountPath: /etc/config/file_21.txt
+      value: content_21
+    - key: file_22.txt
+      mountPath: /etc/config/file_22.txt
+      value: content_22
+    - key: file_23.txt
+      mountPath: /etc/config/file_23.txt
+      value: content_23
+    - key: file_24.txt
+      mountPath: /etc/config/file_24.txt
+      value: content_24
+    - key: file_25.txt
+      mountPath: /etc/config/file_25.txt
+      value: content_25
+    - key: file_26.txt
+      mountPath: /etc/config/file_26.txt
+      value: content_26
+    - key: file_27.txt
+      mountPath: /etc/config/file_27.txt
+      value: content_27
+    - key: file_28.txt
+      mountPath: /etc/config/file_28.txt
+      value: content_28
+    - key: file_29.txt
+      mountPath: /etc/config/file_29.txt
+      value: content_29
+    - key: file_30.txt
+      mountPath: /etc/config/file_30.txt
+      value: content_30
+    - key: file_31.txt
+      mountPath: /etc/config/file_31.txt
+      value: content_31
+    - key: file_32.txt
+      mountPath: /etc/config/file_32.txt
+      value: content_32
+    - key: file_33.txt
+      mountPath: /etc/config/file_33.txt
+      value: content_33
+    - key: file_34.txt
+      mountPath: /etc/config/file_34.txt
+      value: content_34
+    - key: file_35.txt
+      mountPath: /etc/config/file_35.txt
+      value: content_35
+    - key: file_36.txt
+      mountPath: /etc/config/file_36.txt
+      value: content_36
+    - key: file_37.txt
+      mountPath: /etc/config/file_37.txt
+      value: content_37
+    - key: file_38.txt
+      mountPath: /etc/config/file_38.txt
+      value: content_38
+    - key: file_39.txt
+      mountPath: /etc/config/file_39.txt
+      value: content_39
+    - key: file_40.txt
+      mountPath: /etc/config/file_40.txt
+      value: content_40
+    - key: file_41.txt
+      mountPath: /etc/config/file_41.txt
+      value: content_41
+    - key: file_42.txt
+      mountPath: /etc/config/file_42.txt
+      value: content_42
+    - key: file_43.txt
+      mountPath: /etc/config/file_43.txt
+      value: content_43
+    - key: file_44.txt
+      mountPath: /etc/config/file_44.txt
+      value: content_44
+    - key: file_45.txt
+      mountPath: /etc/config/file_45.txt
+      value: content_45
+    - key: file_46.txt
+      mountPath: /etc/config/file_46.txt
+      value: content_46
+    - key: file_47.txt
+      mountPath: /etc/config/file_47.txt
+      value: content_47
+    - key: file_48.txt
+      mountPath: /etc/config/file_48.txt
+      value: content_48
+    - key: file_49.txt
+      mountPath: /etc/config/file_49.txt
+      value: content_49
+    - key: file_50.txt
+      mountPath: /etc/config/file_50.txt
+      value: content_50
+    - key: file_51.txt
+      mountPath: /etc/config/file_51.txt
+      value: content_51
+    - key: file_52.txt
+      mountPath: /etc/config/file_52.txt
+      value: content_52
+    - key: file_53.txt
+      mountPath: /etc/config/file_53.txt
+      value: content_53
+    - key: file_54.txt
+      mountPath: /etc/config/file_54.txt
+      value: content_54
+    - key: file_55.txt
+      mountPath: /etc/config/file_55.txt
+      value: content_55
+    - key: file_56.txt
+      mountPath: /etc/config/file_56.txt
+      value: content_56
+    - key: file_57.txt
+      mountPath: /etc/config/file_57.txt
+      value: content_57
+    - key: file_58.txt
+      mountPath: /etc/config/file_58.txt
+      value: content_58
+    - key: file_59.txt
+      mountPath: /etc/config/file_59.txt
+      value: content_59
+    - key: file_60.txt
+      mountPath: /etc/config/file_60.txt
+      value: content_60
+    - key: file_61.txt
+      mountPath: /etc/config/file_61.txt
+      value: content_61
+    - key: file_62.txt
+      mountPath: /etc/config/file_62.txt
+      value: content_62
+    - key: file_63.txt
+      mountPath: /etc/config/file_63.txt
+      value: content_63
+    - key: file_64.txt
+      mountPath: /etc/config/file_64.txt
+      value: content_64
+    - key: file_65.txt
+      mountPath: /etc/config/file_65.txt
+      value: content_65
+    - key: file_66.txt
+      mountPath: /etc/config/file_66.txt
+      value: content_66
+    - key: file_67.txt
+      mountPath: /etc/config/file_67.txt
+      value: content_67
+    - key: file_68.txt
+      mountPath: /etc/config/file_68.txt
+      value: content_68
+    - key: file_69.txt
+      mountPath: /etc/config/file_69.txt
+      value: content_69
+    - key: file_70.txt
+      mountPath: /etc/config/file_70.txt
+      value: content_70
+    - key: file_71.txt
+      mountPath: /etc/config/file_71.txt
+      value: content_71
+    - key: file_72.txt
+      mountPath: /etc/config/file_72.txt
+      value: content_72
+    - key: file_73.txt
+      mountPath: /etc/config/file_73.txt
+      value: content_73
+    - key: file_74.txt
+      mountPath: /etc/config/file_74.txt
+      value: content_74
+    - key: file_75.txt
+      mountPath: /etc/config/file_75.txt
+      value: content_75
+    - key: file_76.txt
+      mountPath: /etc/config/file_76.txt
+      value: content_76
+    - key: file_77.txt
+      mountPath: /etc/config/file_77.txt
+      value: content_77
+    - key: file_78.txt
+      mountPath: /etc/config/file_78.txt
+      value: content_78
+    - key: file_79.txt
+      mountPath: /etc/config/file_79.txt
+      value: content_79
+    - key: file_80.txt
+      mountPath: /etc/config/file_80.txt
+      value: content_80
+    - key: file_81.txt
+      mountPath: /etc/config/file_81.txt
+      value: content_81
+    - key: file_82.txt
+      mountPath: /etc/config/file_82.txt
+      value: content_82
+    - key: file_83.txt
+      mountPath: /etc/config/file_83.txt
+      value: content_83
+    - key: file_84.txt
+      mountPath: /etc/config/file_84.txt
+      value: content_84
+    - key: file_85.txt
+      mountPath: /etc/config/file_85.txt
+      value: content_85
+    - key: file_86.txt
+      mountPath: /etc/config/file_86.txt
+      value: content_86
+    - key: file_87.txt
+      mountPath: /etc/config/file_87.txt
+      value: content_87
+    - key: file_88.txt
+      mountPath: /etc/config/file_88.txt
+      value: content_88
+    - key: file_89.txt
+      mountPath: /etc/config/file_89.txt
+      value: content_89
+    - key: file_90.txt
+      mountPath: /etc/config/file_90.txt
+      value: content_90
+    - key: file_91.txt
+      mountPath: /etc/config/file_91.txt
+      value: content_91
+    - key: file_92.txt
+      mountPath: /etc/config/file_92.txt
+      value: content_92
+    - key: file_93.txt
+      mountPath: /etc/config/file_93.txt
+      value: content_93
+    - key: file_94.txt
+      mountPath: /etc/config/file_94.txt
+      value: content_94
+    - key: file_95.txt
+      mountPath: /etc/config/file_95.txt
+      value: content_95
+    - key: file_96.txt
+      mountPath: /etc/config/file_96.txt
+      value: content_96
+    - key: file_97.txt
+      mountPath: /etc/config/file_97.txt
+      value: content_97
+    - key: file_98.txt
+      mountPath: /etc/config/file_98.txt
+      value: content_98
+    - key: file_99.txt
+      mountPath: /etc/config/file_99.txt
+      value: content_99
+    - key: file_100.txt
+      mountPath: /etc/config/file_100.txt
+      value: content_100
+    - key: file_101.txt
+      mountPath: /etc/config/file_101.txt
+      value: content_101
+    - key: file_102.txt
+      mountPath: /etc/config/file_102.txt
+      value: content_102
+    - key: file_103.txt
+      mountPath: /etc/config/file_103.txt
+      value: content_103
+    - key: file_104.txt
+      mountPath: /etc/config/file_104.txt
+      value: content_104
+    - key: file_105.txt
+      mountPath: /etc/config/file_105.txt
+      value: content_105
+    - key: file_106.txt
+      mountPath: /etc/config/file_106.txt
+      value: content_106
+    - key: file_107.txt
+      mountPath: /etc/config/file_107.txt
+      value: content_107
+    - key: file_108.txt
+      mountPath: /etc/config/file_108.txt
+      value: content_108
+    - key: file_109.txt
+      mountPath: /etc/config/file_109.txt
+      value: content_109
+    - key: file_110.txt
+      mountPath: /etc/config/file_110.txt
+      value: content_110
+    - key: file_111.txt
+      mountPath: /etc/config/file_111.txt
+      value: content_111
+    - key: file_112.txt
+      mountPath: /etc/config/file_112.txt
+      value: content_112
+    - key: file_113.txt
+      mountPath: /etc/config/file_113.txt
+      value: content_113
+    - key: file_114.txt
+      mountPath: /etc/config/file_114.txt
+      value: content_114
+    - key: file_115.txt
+      mountPath: /etc/config/file_115.txt
+      value: content_115
+    - key: file_116.txt
+      mountPath: /etc/config/file_116.txt
+      value: content_116
+    - key: file_117.txt
+      mountPath: /etc/config/file_117.txt
+      value: content_117
+    - key: file_118.txt
+      mountPath: /etc/config/file_118.txt
+      value: content_118
+    - key: file_119.txt
+      mountPath: /etc/config/file_119.txt
+      value: content_119
+    - key: file_120.txt
+      mountPath: /etc/config/file_120.txt
+      value: content_120
+    - key: file_121.txt
+      mountPath: /etc/config/file_121.txt
+      value: content_121
+    - key: file_122.txt
+      mountPath: /etc/config/file_122.txt
+      value: content_122
+    - key: file_123.txt
+      mountPath: /etc/config/file_123.txt
+      value: content_123
+    - key: file_124.txt
+      mountPath: /etc/config/file_124.txt
+      value: content_124
+    - key: file_125.txt
+      mountPath: /etc/config/file_125.txt
+      value: content_125
+    - key: file_126.txt
+      mountPath: /etc/config/file_126.txt
+      value: content_126
+    - key: file_127.txt
+      mountPath: /etc/config/file_127.txt
+      value: content_127
+    - key: file_128.txt
+      mountPath: /etc/config/file_128.txt
+      value: content_128
+    - key: file_129.txt
+      mountPath: /etc/config/file_129.txt
+      value: content_129
+    - key: file_130.txt
+      mountPath: /etc/config/file_130.txt
+      value: content_130
+    - key: file_131.txt
+      mountPath: /etc/config/file_131.txt
+      value: content_131
+    - key: file_132.txt
+      mountPath: /etc/config/file_132.txt
+      value: content_132
+    - key: file_133.txt
+      mountPath: /etc/config/file_133.txt
+      value: content_133
+    - key: file_134.txt
+      mountPath: /etc/config/file_134.txt
+      value: content_134
+    - key: file_135.txt
+      mountPath: /etc/config/file_135.txt
+      value: content_135
+    - key: file_136.txt
+      mountPath: /etc/config/file_136.txt
+      value: content_136
+    - key: file_137.txt
+      mountPath: /etc/config/file_137.txt
+      value: content_137
+    - key: file_138.txt
+      mountPath: /etc/config/file_138.txt
+      value: content_138
+    - key: file_139.txt
+      mountPath: /etc/config/file_139.txt
+      value: content_139
+    - key: file_140.txt
+      mountPath: /etc/config/file_140.txt
+      value: content_140
+    - key: file_141.txt
+      mountPath: /etc/config/file_141.txt
+      value: content_141
+    - key: file_142.txt
+      mountPath: /etc/config/file_142.txt
+      value: content_142
+    - key: file_143.txt
+      mountPath: /etc/config/file_143.txt
+      value: content_143
+    - key: file_144.txt
+      mountPath: /etc/config/file_144.txt
+      value: content_144
+    - key: file_145.txt
+      mountPath: /etc/config/file_145.txt
+      value: content_145
+    - key: file_146.txt
+      mountPath: /etc/config/file_146.txt
+      value: content_146
+    - key: file_147.txt
+      mountPath: /etc/config/file_147.txt
+      value: content_147
+    - key: file_148.txt
+      mountPath: /etc/config/file_148.txt
+      value: content_148
+    - key: file_149.txt
+      mountPath: /etc/config/file_149.txt
+      value: content_149
+    - key: file_150.txt
+      mountPath: /etc/config/file_150.txt
+      value: content_150
+    - key: file_151.txt
+      mountPath: /etc/config/file_151.txt
+      value: content_151
+    - key: file_152.txt
+      mountPath: /etc/config/file_152.txt
+      value: content_152
+    - key: file_153.txt
+      mountPath: /etc/config/file_153.txt
+      value: content_153
+    - key: file_154.txt
+      mountPath: /etc/config/file_154.txt
+      value: content_154
+    - key: file_155.txt
+      mountPath: /etc/config/file_155.txt
+      value: content_155
+    - key: file_156.txt
+      mountPath: /etc/config/file_156.txt
+      value: content_156
+    - key: file_157.txt
+      mountPath: /etc/config/file_157.txt
+      value: content_157
+    - key: file_158.txt
+      mountPath: /etc/config/file_158.txt
+      value: content_158
+    - key: file_159.txt
+      mountPath: /etc/config/file_159.txt
+      value: content_159
+    - key: file_160.txt
+      mountPath: /etc/config/file_160.txt
+      value: content_160
+    - key: file_161.txt
+      mountPath: /etc/config/file_161.txt
+      value: content_161
+    - key: file_162.txt
+      mountPath: /etc/config/file_162.txt
+      value: content_162
+    - key: file_163.txt
+      mountPath: /etc/config/file_163.txt
+      value: content_163
+    - key: file_164.txt
+      mountPath: /etc/config/file_164.txt
+      value: content_164
+    - key: file_165.txt
+      mountPath: /etc/config/file_165.txt
+      value: content_165
+    - key: file_166.txt
+      mountPath: /etc/config/file_166.txt
+      value: content_166
+    - key: file_167.txt
+      mountPath: /etc/config/file_167.txt
+      value: content_167
+    - key: file_168.txt
+      mountPath: /etc/config/file_168.txt
+      value: content_168
+    - key: file_169.txt
+      mountPath: /etc/config/file_169.txt
+      value: content_169
+    - key: file_170.txt
+      mountPath: /etc/config/file_170.txt
+      value: content_170
+    - key: file_171.txt
+      mountPath: /etc/config/file_171.txt
+      value: content_171
+    - key: file_172.txt
+      mountPath: /etc/config/file_172.txt
+      value: content_172
+    - key: file_173.txt
+      mountPath: /etc/config/file_173.txt
+      value: content_173
+    - key: file_174.txt
+      mountPath: /etc/config/file_174.txt
+      value: content_174
+    - key: file_175.txt
+      mountPath: /etc/config/file_175.txt
+      value: content_175
+    - key: file_176.txt
+      mountPath: /etc/config/file_176.txt
+      value: content_176
+    - key: file_177.txt
+      mountPath: /etc/config/file_177.txt
+      value: content_177
+    - key: file_178.txt
+      mountPath: /etc/config/file_178.txt
+      value: content_178
+    - key: file_179.txt
+      mountPath: /etc/config/file_179.txt
+      value: content_179
+    - key: file_180.txt
+      mountPath: /etc/config/file_180.txt
+      value: content_180
+    - key: file_181.txt
+      mountPath: /etc/config/file_181.txt
+      value: content_181
+    - key: file_182.txt
+      mountPath: /etc/config/file_182.txt
+      value: content_182
+    - key: file_183.txt
+      mountPath: /etc/config/file_183.txt
+      value: content_183
+    - key: file_184.txt
+      mountPath: /etc/config/file_184.txt
+      value: content_184
+    - key: file_185.txt
+      mountPath: /etc/config/file_185.txt
+      value: content_185
+    - key: file_186.txt
+      mountPath: /etc/config/file_186.txt
+      value: content_186
+    - key: file_187.txt
+      mountPath: /etc/config/file_187.txt
+      value: content_187
+    - key: file_188.txt
+      mountPath: /etc/config/file_188.txt
+      value: content_188
+    - key: file_189.txt
+      mountPath: /etc/config/file_189.txt
+      value: content_189
+    - key: file_190.txt
+      mountPath: /etc/config/file_190.txt
+      value: content_190
+    - key: file_191.txt
+      mountPath: /etc/config/file_191.txt
+      value: content_191
+    - key: file_192.txt
+      mountPath: /etc/config/file_192.txt
+      value: content_192
+    - key: file_193.txt
+      mountPath: /etc/config/file_193.txt
+      value: content_193
+    - key: file_194.txt
+      mountPath: /etc/config/file_194.txt
+      value: content_194
+    - key: file_195.txt
+      mountPath: /etc/config/file_195.txt
+      value: content_195
+    - key: file_196.txt
+      mountPath: /etc/config/file_196.txt
+      value: content_196
+    - key: file_197.txt
+      mountPath: /etc/config/file_197.txt
+      value: content_197
+    - key: file_198.txt
+      mountPath: /etc/config/file_198.txt
+      value: content_198
+    - key: file_199.txt
+      mountPath: /etc/config/file_199.txt
+      value: content_199
+    - key: file_200.txt
+      mountPath: /etc/config/file_200.txt
+      value: content_200
+    - key: file_201.txt
+      mountPath: /etc/config/file_201.txt
+      value: content_201
+    - key: file_202.txt
+      mountPath: /etc/config/file_202.txt
+      value: content_202
+    - key: file_203.txt
+      mountPath: /etc/config/file_203.txt
+      value: content_203
+    - key: file_204.txt
+      mountPath: /etc/config/file_204.txt
+      value: content_204
+    - key: file_205.txt
+      mountPath: /etc/config/file_205.txt
+      value: content_205
+    - key: file_206.txt
+      mountPath: /etc/config/file_206.txt
+      value: content_206
+    - key: file_207.txt
+      mountPath: /etc/config/file_207.txt
+      value: content_207
+    - key: file_208.txt
+      mountPath: /etc/config/file_208.txt
+      value: content_208
+    - key: file_209.txt
+      mountPath: /etc/config/file_209.txt
+      value: content_209
+    - key: file_210.txt
+      mountPath: /etc/config/file_210.txt
+      value: content_210
+    - key: file_211.txt
+      mountPath: /etc/config/file_211.txt
+      value: content_211
+    - key: file_212.txt
+      mountPath: /etc/config/file_212.txt
+      value: content_212
+    - key: file_213.txt
+      mountPath: /etc/config/file_213.txt
+      value: content_213
+    - key: file_214.txt
+      mountPath: /etc/config/file_214.txt
+      value: content_214
+    - key: file_215.txt
+      mountPath: /etc/config/file_215.txt
+      value: content_215
+    - key: file_216.txt
+      mountPath: /etc/config/file_216.txt
+      value: content_216
+    - key: file_217.txt
+      mountPath: /etc/config/file_217.txt
+      value: content_217
+    - key: file_218.txt
+      mountPath: /etc/config/file_218.txt
+      value: content_218
+    - key: file_219.txt
+      mountPath: /etc/config/file_219.txt
+      value: content_219
+    - key: file_220.txt
+      mountPath: /etc/config/file_220.txt
+      value: content_220
+    - key: file_221.txt
+      mountPath: /etc/config/file_221.txt
+      value: content_221
+    - key: file_222.txt
+      mountPath: /etc/config/file_222.txt
+      value: content_222
+    - key: file_223.txt
+      mountPath: /etc/config/file_223.txt
+      value: content_223
+    - key: file_224.txt
+      mountPath: /etc/config/file_224.txt
+      value: content_224
+    - key: file_225.txt
+      mountPath: /etc/config/file_225.txt
+      value: content_225
+    - key: file_226.txt
+      mountPath: /etc/config/file_226.txt
+      value: content_226
+    - key: file_227.txt
+      mountPath: /etc/config/file_227.txt
+      value: content_227
+    - key: file_228.txt
+      mountPath: /etc/config/file_228.txt
+      value: content_228
+    - key: file_229.txt
+      mountPath: /etc/config/file_229.txt
+      value: content_229
+    - key: file_230.txt
+      mountPath: /etc/config/file_230.txt
+      value: content_230
+    - key: file_231.txt
+      mountPath: /etc/config/file_231.txt
+      value: content_231
+    - key: file_232.txt
+      mountPath: /etc/config/file_232.txt
+      value: content_232
+    - key: file_233.txt
+      mountPath: /etc/config/file_233.txt
+      value: content_233
+    - key: file_234.txt
+      mountPath: /etc/config/file_234.txt
+      value: content_234
+    - key: file_235.txt
+      mountPath: /etc/config/file_235.txt
+      value: content_235
+    - key: file_236.txt
+      mountPath: /etc/config/file_236.txt
+      value: content_236
+    - key: file_237.txt
+      mountPath: /etc/config/file_237.txt
+      value: content_237
+    - key: file_238.txt
+      mountPath: /etc/config/file_238.txt
+      value: content_238
+    - key: file_239.txt
+      mountPath: /etc/config/file_239.txt
+      value: content_239
+    - key: file_240.txt
+      mountPath: /etc/config/file_240.txt
+      value: content_240
+    - key: file_241.txt
+      mountPath: /etc/config/file_241.txt
+      value: content_241
+    - key: file_242.txt
+      mountPath: /etc/config/file_242.txt
+      value: content_242
+    - key: file_243.txt
+      mountPath: /etc/config/file_243.txt
+      value: content_243
+    - key: file_244.txt
+      mountPath: /etc/config/file_244.txt
+      value: content_244
+    - key: file_245.txt
+      mountPath: /etc/config/file_245.txt
+      value: content_245
+    - key: file_246.txt
+      mountPath: /etc/config/file_246.txt
+      value: content_246
+    - key: file_247.txt
+      mountPath: /etc/config/file_247.txt
+      value: content_247
+    - key: file_248.txt
+      mountPath: /etc/config/file_248.txt
+      value: content_248
+    - key: file_249.txt
+      mountPath: /etc/config/file_249.txt
+      value: content_249
+    - key: file_250.txt
+      mountPath: /etc/config/file_250.txt
+      value: content_250
+    - key: file_251.txt
+      mountPath: /etc/config/file_251.txt
+      value: content_251
+    - key: file_252.txt
+      mountPath: /etc/config/file_252.txt
+      value: content_252
+    - key: file_253.txt
+      mountPath: /etc/config/file_253.txt
+      value: content_253
+    - key: file_254.txt
+      mountPath: /etc/config/file_254.txt
+      value: content_254
+    - key: file_255.txt
+      mountPath: /etc/config/file_255.txt
+      value: content_255
+    - key: file_256.txt
+      mountPath: /etc/config/file_256.txt
+      value: content_256
+    image: nginx:alpine
+  owner:
+    componentName: adversarial-oversized-files-257
+    projectName: default

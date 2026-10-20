@@ -353,6 +353,221 @@ func (a *TemplateAggregator) EstimateComponentTypeSpec(spec v1alpha1.ComponentTy
 	return out, nil
 }
 
+// EstimateTrait aggregates all creates, patches, removes and validation rules for a Trait per Project 701 §4.4.
+func (a *TemplateAggregator) EstimateTrait(trait *v1alpha1.Trait) (TemplateEstimate, error) {
+	return a.EstimateTraitSpec(trait.Spec)
+}
+
+// EstimateTraitSpec aggregates all creates, patches, removes and validation rules for a TraitSpec.
+func (a *TemplateAggregator) EstimateTraitSpec(spec v1alpha1.TraitSpec) (TemplateEstimate, error) {
+	out := TemplateEstimate{
+		State: StateKnown,
+	}
+
+	baseEnv := a.validator.GetBaseEnv()
+
+	// 1. Cost validations & preRenderValidations
+	var valCost uint64
+	allValidations := append([]v1alpha1.ValidationRule(nil), spec.Validations...)
+	allValidations = append(allValidations, spec.PreRenderValidations...)
+	for i, rule := range allValidations {
+		if rule.Rule != "" {
+			inner := unwrapCEL(rule.Rule)
+			est := a.EstimateExpression(inner, baseEnv, fmt.Sprintf("validations[%d]", i))
+			valCost = satAdd(valCost, est.Cost)
+			if est.State == StateUnknown {
+				out.State = StateUnknown
+			}
+		}
+	}
+	out.ValidationCost = valCost
+
+	// 2. Cost creates (each TraitCreate is a resource template)
+	var resourcesTotal uint64
+	var totalExpansions uint64
+	for i, create := range spec.Creates {
+		resID := fmt.Sprintf("creates[%d]", i)
+		rEst, err := a.EstimateResource(v1alpha1.ResourceTemplate{
+			ID:          resID,
+			IncludeWhen: create.IncludeWhen,
+			ForEach:     create.ForEach,
+			Var:         create.Var,
+			Template:    create.Template,
+		})
+		if err != nil {
+			return out, err
+		}
+		out.Resources = append(out.Resources, rEst)
+		if rEst.State == StateUnknown {
+			out.State = StateUnknown
+		}
+		resourcesTotal = satAdd(resourcesTotal, rEst.TotalCost)
+		totalExpansions = satAdd(totalExpansions, rEst.LoopBound)
+	}
+
+	// 3. Cost patches
+	for i, patch := range spec.Patches {
+		patchID := fmt.Sprintf("patches[%d]", i)
+		pEst, err := a.estimateTraitPatch(patch, patchID)
+		if err != nil {
+			return out, err
+		}
+		out.Resources = append(out.Resources, pEst)
+		if pEst.State == StateUnknown {
+			out.State = StateUnknown
+		}
+		resourcesTotal = satAdd(resourcesTotal, pEst.TotalCost)
+		totalExpansions = satAdd(totalExpansions, pEst.LoopBound)
+	}
+
+	out.TotalForEachExpansions = totalExpansions
+	if totalExpansions > MaxForEachItemsPerRender {
+		out.ForEachRenderCapBreach = true
+		out.State = StateUnknown
+	}
+
+	total := satAdd(valCost, resourcesTotal)
+	out.TotalCost = total
+
+	if out.State == StateUnknown || total >= (1<<63) || total == math.MaxUint64 {
+		out.State = StateUnknown
+		out.TotalCost = math.MaxUint64
+		out.Verdict = VerdictUnknown
+	} else if out.TotalCost > MaxCumulativeRenderBudget {
+		out.Verdict = VerdictOverBudget
+	} else {
+		out.Verdict = VerdictWithinBudget
+	}
+
+	return out, nil
+}
+
+// estimateTraitPatch estimates the worst-case cost of a single TraitPatch.
+func (a *TemplateAggregator) estimateTraitPatch(patch v1alpha1.TraitPatch, id string) (ResourceEstimate, error) {
+	out := ResourceEstimate{
+		ID:    id,
+		State: StateKnown,
+	}
+
+	baseEnv := a.validator.GetBaseEnv()
+	scopedCoster := a.coster
+	loopBound := uint64(1)
+	loopVarEnv := baseEnv
+	var forEachEstCost uint64
+
+	if patch.ForEach != "" {
+		inner := unwrapCEL(patch.ForEach)
+		out.ForEachExpression = inner
+		out.LoopVar = patch.Var
+
+		forEachEst := a.EstimateExpression(inner, baseEnv, fmt.Sprintf("%s.forEach", id))
+		forEachEstCost = forEachEst.Cost
+		out.Expressions = append(out.Expressions, forEachEst)
+		if forEachEst.State == StateUnknown {
+			out.State = StateUnknown
+		}
+
+		loopBound = MaxForEachItemsPerLoop
+		ast, _ := baseEnv.Compile(inner)
+		if ast != nil {
+			var path []string
+			shapeValid := true
+			if innerTrimmed := strings.TrimSpace(inner); innerTrimmed != "" {
+				for _, part := range strings.Split(innerTrimmed, ".") {
+					if strings.Contains(part, "(") {
+						idx := strings.Index(part, "(")
+						callName := part[:idx]
+						if callName == "transformMap" || callName == "filter" || callName == "map" || callName == "distinct" {
+							break
+						}
+						closeIdx := strings.LastIndex(part, ")")
+						if closeIdx == -1 {
+							shapeValid = false
+							break
+						}
+						argsStr := strings.TrimSpace(part[idx+1 : closeIdx])
+						if strings.Contains(argsStr, ".") || strings.Contains(argsStr, "(") {
+							shapeValid = false
+							break
+						}
+						part = callName
+					}
+					path = append(path, part)
+				}
+			}
+			if shapeValid && len(path) > 0 {
+				sizeEst := a.coster.EstimateSize(pathAstNode{path: path})
+				if sizeEst != nil && sizeEst.Max > 0 && sizeEst.Max < math.MaxUint64 {
+					if sizeEst.Max > MaxForEachItemsPerLoop {
+						loopBound = MaxForEachItemsPerLoop
+						out.ForEachCapExceeded = true
+					} else {
+						loopBound = sizeEst.Max
+					}
+				} else {
+					loopBound = MaxForEachItemsPerLoop
+					out.State = StateUnknown
+				}
+			} else {
+				loopBound = MaxForEachItemsPerLoop
+				out.State = StateUnknown
+			}
+		} else {
+			loopBound = MaxForEachItemsPerLoop
+			out.State = StateUnknown
+		}
+
+		extEnv, loopVarDeclType, err := a.validator.ResourceEnvironmentWithDeclType(patch.ForEach, patch.Var)
+		if err != nil {
+			return out, fmt.Errorf("failed to get resource environment for patch %s: %w", id, err)
+		}
+		loopVarEnv = extEnv
+		if loopVarDeclType != nil && patch.Var != "" {
+			scopedCoster = scopedCoster.WithRootType(patch.Var, loopVarDeclType)
+		}
+	}
+	out.LoopBound = loopBound
+
+	// Estimate expressions inside operations
+	var bodyExpressions []ExpressionEstimate
+	for opIdx, op := range patch.Operations {
+		if op.Value != nil && len(op.Value.Raw) > 0 {
+			var data any
+			if err := json.Unmarshal(op.Value.Raw, &data); err != nil {
+				data = string(op.Value.Raw)
+			}
+			a.walkExpressionsWithCoster(data, fmt.Sprintf("%s.operations[%d].value", id, opIdx), loopVarEnv, scopedCoster, &bodyExpressions)
+		}
+	}
+
+	var bodyCostPerIter uint64
+	for _, be := range bodyExpressions {
+		out.Expressions = append(out.Expressions, be)
+		if be.State == StateUnknown {
+			out.State = StateUnknown
+		}
+		bodyCostPerIter = satAdd(bodyCostPerIter, be.Cost)
+	}
+	out.BodyCostPerIter = bodyCostPerIter
+
+	total := satAdd(out.IncludeWhenCost, forEachEstCost)
+	scaledBody := saturatingMul(loopBound, bodyCostPerIter)
+	total = satAdd(total, scaledBody)
+	out.TotalCost = total
+
+	if out.State == StateUnknown || total >= (1<<63) || total == math.MaxUint64 {
+		out.State = StateUnknown
+		out.TotalCost = math.MaxUint64
+		out.Verdict = VerdictUnknown
+	} else if out.TotalCost > MaxCumulativeRenderBudget {
+		out.Verdict = VerdictOverBudget
+	} else {
+		out.Verdict = VerdictWithinBudget
+	}
+
+	return out, nil
+}
+
 // walkExpressions recursively locates and estimates CEL expressions inside template JSON.
 // walkExpressions recursively locates and estimates CEL expressions inside template JSON using default coster.
 func (a *TemplateAggregator) walkExpressions(data any, path string, env *cel.Env, out *[]ExpressionEstimate) {

@@ -17,6 +17,7 @@ import (
 
 	openchoreodevv1alpha1 "github.com/openchoreo/openchoreo/api/v1alpha1"
 	"github.com/openchoreo/openchoreo/internal/validation/component"
+	"github.com/openchoreo/openchoreo/internal/validation/component/cost"
 	"github.com/openchoreo/openchoreo/internal/validation/schemautil"
 )
 
@@ -35,12 +36,21 @@ func SetupClusterTraitWebhookWithManager(mgr ctrl.Manager) error {
 
 // Validator validates ClusterTrait resources
 // +kubebuilder:object:generate=false
-type Validator struct{}
+type Validator struct {
+	costChecker *cost.WebhookCostChecker
+}
+
+func (v *Validator) getCostChecker() *cost.WebhookCostChecker {
+	if v.costChecker == nil {
+		v.costChecker = cost.NewWebhookCostChecker("")
+	}
+	return v.costChecker
+}
 
 var _ webhook.CustomValidator = &Validator{}
 
 // ValidateCreate implements webhook.CustomValidator so a webhook will be registered for the type ClusterTrait.
-func (v *Validator) ValidateCreate(_ context.Context, obj runtime.Object) (admission.Warnings, error) {
+func (v *Validator) ValidateCreate(ctx context.Context, obj runtime.Object) (admission.Warnings, error) {
 	ct, ok := obj.(*openchoreodevv1alpha1.ClusterTrait)
 	if !ok {
 		return nil, fmt.Errorf("expected a ClusterTrait object but got %T", obj)
@@ -66,7 +76,17 @@ func (v *Validator) ValidateCreate(_ context.Context, obj runtime.Object) (admis
 		return nil, apierrors.NewInvalid(ct.GroupVersionKind().GroupKind(), ct.GetName(), allErrs)
 	}
 
-	return nil, nil
+	// Admission cost analysis (Project 701 §4.8)
+	adaptedTrait := &openchoreodevv1alpha1.Trait{
+		ObjectMeta: ct.ObjectMeta,
+		Spec:       openchoreodevv1alpha1.TraitSpec(ct.Spec),
+	}
+	costWarnings, costErr := v.getCostChecker().ValidateTraitCreate(ctx, adaptedTrait, parametersSchema, envConfigsSchema)
+	if costErr != nil {
+		return costWarnings, costErr
+	}
+
+	return costWarnings, nil
 }
 
 // ValidateUpdate implements webhook.CustomValidator so a webhook will be registered for the type ClusterTrait.
