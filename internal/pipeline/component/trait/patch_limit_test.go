@@ -148,10 +148,12 @@ func TestTraitPatchesWithinCapStillApply(t *testing.T) {
 // RenderComponent call, so a component that spreads the same fan-out across several traits
 // must not slip past it.
 func TestPatchOperationsAccumulateAcrossTraits(t *testing.T) {
-	// Each pass is 100 x 60 = 6,000 applications: under the cap alone, over it together.
+	// With maxPatchOperations = 2,000:
+	// Each pass is 50 targets x 30 items = 1,500 applications:
+	// Under the cap alone (1,500 <= 2,000), but over it together (3,000 > 2,000).
 	const (
-		targets = 100
-		items   = 60
+		targets = 50
+		items   = 30
 	)
 
 	processor := NewProcessor(template.NewEngine())

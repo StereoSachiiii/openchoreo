@@ -7,7 +7,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"maps"
 
 	"github.com/openchoreo/openchoreo/api/v1alpha1"
 	"github.com/openchoreo/openchoreo/internal/template"
@@ -55,27 +54,7 @@ func EvalForEach(
 	varName string,
 	celContext map[string]any,
 ) ([]map[string]any, error) {
-	result, err := engine.Render(ctx, forEach, celContext)
-	if err != nil {
-		return nil, err
-	}
-
-	items, err := ToIterableItems(ctx, result)
-	if err != nil {
-		return nil, err
-	}
-
-	if varName == "" {
-		varName = "item"
-	}
-
-	contexts := make([]map[string]any, len(items))
-	for i, item := range items {
-		itemContext := maps.Clone(celContext)
-		itemContext[varName] = item
-		contexts[i] = itemContext
-	}
-	return contexts, nil
+	return engine.RenderForEach(ctx, forEach, varName, celContext)
 }
 
 // EvaluateValidationRules evaluates a list of CEL-based validation rules against the given context.

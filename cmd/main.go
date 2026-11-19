@@ -72,6 +72,7 @@ import (
 	ciliumv2 "github.com/openchoreo/openchoreo/internal/dataplane/kubernetes/types/cilium.io/v2"
 	esv1 "github.com/openchoreo/openchoreo/internal/dataplane/kubernetes/types/externalsecrets/v1"
 	csisecretv1 "github.com/openchoreo/openchoreo/internal/dataplane/kubernetes/types/secretstorecsi/v1"
+	"github.com/openchoreo/openchoreo/internal/limits"
 	"github.com/openchoreo/openchoreo/internal/version"
 	authzrolebindingwebhook "github.com/openchoreo/openchoreo/internal/webhook/authzrolebinding"
 	clusterauthzrolebindingwebhook "github.com/openchoreo/openchoreo/internal/webhook/clusterauthzrolebinding"
@@ -352,6 +353,10 @@ func main() {
 	var secretRemoteKeySeparator string
 	var referencedConfigRollout bool
 	var rrIntervals renderedReleaseIntervals
+	var schemaDefaultMaxItems int64
+	var schemaDefaultMaxProperties int64
+	var schemaDefaultMaxLength int64
+	var schemaDefaultMapKeyMaxLength int64
 	var tlsOpts []func(*tls.Config)
 	// Environment defaults are resolved before the flags are declared, so a malformed value
 	// is reported after flag.Parse rather than silently replaced by the built-in default.
@@ -364,6 +369,11 @@ func main() {
 		"RENDEREDRELEASE_STABLE_INTERVAL", renderedrelease.DefaultStableInterval)
 	rrProgressingIntervalDefault, rrProgressingIntervalEnvErr := getEnvDuration(
 		"RENDEREDRELEASE_PROGRESSING_INTERVAL", renderedrelease.DefaultProgressingInterval)
+	schemaMaxItemsDefault, schemaMaxItemsEnvErr := getEnvInt64("OPENCHOREO_SCHEMA_DEFAULT_MAX_ITEMS", 0)
+	schemaMaxPropsDefault, schemaMaxPropsEnvErr := getEnvInt64("OPENCHOREO_SCHEMA_DEFAULT_MAX_PROPERTIES", 0)
+	schemaMaxLenDefault, schemaMaxLenEnvErr := getEnvInt64("OPENCHOREO_SCHEMA_DEFAULT_MAX_LENGTH", 0)
+	schemaMapKeyLenDefault, schemaMapKeyLenEnvErr := getEnvInt64(
+		"OPENCHOREO_SCHEMA_DEFAULT_MAP_KEY_MAX_LENGTH", limits.DefaultMapKeyMaxLength)
 	flag.StringVar(&metricsAddr, "metrics-bind-address", "0", "The address the metrics endpoint binds to. "+
 		"Use :8443 for HTTPS or :8080 for HTTP, or leave as 0 to disable the metrics service.")
 	flag.StringVar(&probeAddr, "health-probe-bind-address", ":8081", "The address the probe endpoint binds to.")
@@ -421,6 +431,18 @@ func main() {
 		"How long a RenderedRelease with transitioning resources waits before its next check, unless the "+
 			"release sets spec.progressingInterval. 20% jitter is added. Must be greater than 0. Defaults to "+
 			"the RENDEREDRELEASE_PROGRESSING_INTERVAL environment variable when set.")
+	flag.Int64Var(&schemaDefaultMaxItems, "schema-default-max-items", schemaMaxItemsDefault,
+		"Platform default maxItems applied to OpenAPI array schemas when omitted by the author. "+
+			"Defaults to OPENCHOREO_SCHEMA_DEFAULT_MAX_ITEMS when set.")
+	flag.Int64Var(&schemaDefaultMaxProperties, "schema-default-max-properties", schemaMaxPropsDefault,
+		"Platform default maxProperties applied to OpenAPI map/dictionary schemas when omitted by the author. "+
+			"Defaults to OPENCHOREO_SCHEMA_DEFAULT_MAX_PROPERTIES when set.")
+	flag.Int64Var(&schemaDefaultMaxLength, "schema-default-max-length", schemaMaxLenDefault,
+		"Platform default maxLength applied to OpenAPI string schemas when omitted by the author. "+
+			"Defaults to OPENCHOREO_SCHEMA_DEFAULT_MAX_LENGTH when set.")
+	flag.Int64Var(&schemaDefaultMapKeyMaxLength, "schema-default-map-key-max-length", schemaMapKeyLenDefault,
+		"Platform default maxLength assumed for OpenAPI map keys. "+
+			"Defaults to OPENCHOREO_SCHEMA_DEFAULT_MAP_KEY_MAX_LENGTH when set.")
 	opts := zap.Options{
 		Development: true,
 	}
@@ -470,6 +492,26 @@ func main() {
 		setupLog.Error(err, "invalid --renderedrelease-progressing-interval")
 		os.Exit(1)
 	}
+	for _, envErr := range []struct {
+		name string
+		err  error
+	}{
+		{"OPENCHOREO_SCHEMA_DEFAULT_MAX_ITEMS", schemaMaxItemsEnvErr},
+		{"OPENCHOREO_SCHEMA_DEFAULT_MAX_PROPERTIES", schemaMaxPropsEnvErr},
+		{"OPENCHOREO_SCHEMA_DEFAULT_MAX_LENGTH", schemaMaxLenEnvErr},
+		{"OPENCHOREO_SCHEMA_DEFAULT_MAP_KEY_MAX_LENGTH", schemaMapKeyLenEnvErr},
+	} {
+		if envErr.err != nil {
+			setupLog.Error(envErr.err, "invalid schema bound environment variable", "env", envErr.name)
+			os.Exit(1)
+		}
+	}
+	limits.SetActiveSchemaBounds(limits.SchemaBounds{
+		MaxItems:        schemaDefaultMaxItems,
+		MaxProperties:   schemaDefaultMaxProperties,
+		MaxLength:       schemaDefaultMaxLength,
+		MaxMapKeyLength: schemaDefaultMapKeyMaxLength,
+	})
 
 	setupLog.Info("starting controller manager", append(version.GetLogKeyValues(), "deploymentPlane", deploymentPlane)...)
 
@@ -605,22 +647,42 @@ func main() {
 			setup func(ctrl.Manager) error
 		}{
 			{"Project", projectwebhook.SetupProjectWebhookWithManager},
-			{"ComponentType", componenttypewebhook.SetupComponentTypeWebhookWithManager},
-			{"ClusterComponentType", clustercomponenttypewebhook.SetupClusterComponentTypeWebhookWithManager},
+			{"ComponentType", func(m ctrl.Manager) error {
+				return componenttypewebhook.SetupComponentTypeWebhookWithManagerAndCostLimit(m, celCostLimit)
+			}},
+			{"ClusterComponentType", func(m ctrl.Manager) error {
+				return clustercomponenttypewebhook.SetupClusterComponentTypeWebhookWithManagerAndCostLimit(m, celCostLimit)
+			}},
 			{"Component", componentwebhook.SetupComponentWebhookWithManager},
 			{"Workload", workloadwebhook.SetupWorkloadWebhookWithManager},
-			{"Trait", traitwebhook.SetupTraitWebhookWithManager},
-			{"ClusterTrait", clustertraitwebhook.SetupClusterTraitWebhookWithManager},
+			{"Trait", func(m ctrl.Manager) error {
+				return traitwebhook.SetupTraitWebhookWithManagerAndCostLimit(m, celCostLimit)
+			}},
+			{"ClusterTrait", func(m ctrl.Manager) error {
+				return clustertraitwebhook.SetupClusterTraitWebhookWithManagerAndCostLimit(m, celCostLimit)
+			}},
 			{"ComponentRelease", componentreleasewebhook.SetupComponentReleaseWebhookWithManager},
 			{"ReleaseBinding", releasebindingwebhook.SetupReleaseBindingWebhookWithManager},
-			{"ResourceType", resourcetypewebhook.SetupResourceTypeWebhookWithManager},
-			{"ClusterResourceType", clusterresourcetypewebhook.SetupClusterResourceTypeWebhookWithManager},
+			{"ResourceType", func(m ctrl.Manager) error {
+				return resourcetypewebhook.SetupResourceTypeWebhookWithManagerAndCostLimit(m, celCostLimit)
+			}},
+			{"ClusterResourceType", func(m ctrl.Manager) error {
+				return clusterresourcetypewebhook.SetupClusterResourceTypeWebhookWithManagerAndCostLimit(m, celCostLimit)
+			}},
 			{"ResourceRelease", resourcereleasewebhook.SetupResourceReleaseWebhookWithManager},
-			{"EndpointType", endpointtypewebhook.SetupEndpointTypeWebhookWithManager},
-			{"ClusterEndpointType", clusterendpointtypewebhook.SetupClusterEndpointTypeWebhookWithManager},
+			{"EndpointType", func(m ctrl.Manager) error {
+				return endpointtypewebhook.SetupEndpointTypeWebhookWithManagerAndCostLimit(m, celCostLimit)
+			}},
+			{"ClusterEndpointType", func(m ctrl.Manager) error {
+				return clusterendpointtypewebhook.SetupClusterEndpointTypeWebhookWithManagerAndCostLimit(m, celCostLimit)
+			}},
 			{"EndpointRelease", endpointreleasewebhook.SetupEndpointReleaseWebhookWithManager},
-			{"Workflow", workflowwebhook.SetupWorkflowWebhookWithManager},
-			{"ClusterWorkflow", clusterworkflowwebhook.SetupClusterWorkflowWebhookWithManager},
+			{"Workflow", func(m ctrl.Manager) error {
+				return workflowwebhook.SetupWorkflowWebhookWithManagerAndCostLimit(m, celCostLimit)
+			}},
+			{"ClusterWorkflow", func(m ctrl.Manager) error {
+				return clusterworkflowwebhook.SetupClusterWorkflowWebhookWithManagerAndCostLimit(m, celCostLimit)
+			}},
 			{"AuthzRoleBinding", authzrolebindingwebhook.SetupAuthzRoleBindingWebhookWithManager},
 			{"ClusterAuthzRoleBinding", clusterauthzrolebindingwebhook.SetupClusterAuthzRoleBindingWebhookWithManager},
 		}
@@ -694,6 +756,18 @@ func getEnvUint(key string, defaultValue uint64) (uint64, error) {
 		return defaultValue, nil
 	}
 	parsed, err := strconv.ParseUint(value, 10, 64)
+	if err != nil {
+		return 0, fmt.Errorf("parse %s=%q: %w", key, value, err)
+	}
+	return parsed, nil
+}
+
+func getEnvInt64(key string, defaultValue int64) (int64, error) {
+	value := os.Getenv(key)
+	if value == "" {
+		return defaultValue, nil
+	}
+	parsed, err := strconv.ParseInt(value, 10, 64)
 	if err != nil {
 		return 0, fmt.Errorf("parse %s=%q: %w", key, value, err)
 	}

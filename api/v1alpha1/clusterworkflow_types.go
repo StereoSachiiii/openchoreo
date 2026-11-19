@@ -42,12 +42,14 @@ type ClusterWorkflowSpec struct {
 
 	// Resources are additional templates that generate Kubernetes resources dynamically.
 	// +optional
+	// +kubebuilder:validation:MaxItems=100
 	Resources []WorkflowResource `json:"resources,omitempty"`
 
 	// ExternalRefs declares references to external CRs that are resolved at runtime.
 	// +optional
 	// +listType=map
 	// +listMapKey=id
+	// +kubebuilder:validation:MaxItems=100
 	ExternalRefs []ExternalRef `json:"externalRefs,omitempty"`
 
 	// TTLAfterCompletion defines the time-to-live for WorkflowRun instances after completion.

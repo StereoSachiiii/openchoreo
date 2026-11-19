@@ -12,6 +12,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 
 	openchoreodevv1alpha1 "github.com/openchoreo/openchoreo/api/v1alpha1"
+	"github.com/openchoreo/openchoreo/internal/validation/cost"
 )
 
 // The endpoint-type validator's contract is covered in
@@ -71,5 +72,43 @@ var _ = Describe("EndpointType Webhook", func() {
 	It("rejects the wrong object type", func() {
 		_, err := validator.ValidateCreate(ctx, &openchoreodevv1alpha1.ClusterEndpointType{})
 		Expect(err).To(HaveOccurred())
+	})
+
+	Context("CEL Cost Enforcement", func() {
+		overbudgetType := func() *openchoreodevv1alpha1.EndpointType {
+			return &openchoreodevv1alpha1.EndpointType{
+				Spec: openchoreodevv1alpha1.EndpointTypeSpec{
+					Parameters: &openchoreodevv1alpha1.SchemaSection{
+						OpenAPIV3Schema: &runtime.RawExtension{
+							Raw: []byte(`{"type":"object","properties":{"hosts":{"type":"array","maxItems":60,"items":{"type":"string"}}}}`),
+						},
+					},
+					Resources: []openchoreodevv1alpha1.ResourceTemplate{
+						{
+							ID: "route",
+							Template: &runtime.RawExtension{
+								Raw: []byte(`{"apiVersion":"gateway.networking.k8s.io/v1","kind":"HTTPRoute","metadata":{"name":"${metadata.name}"},"spec":{"hostnames":["${parameters.hosts.map(h1, parameters.hosts.map(h2, parameters.hosts.map(h3, h1 + h2 + h3))).size()}"]}}`),
+							},
+						},
+					},
+				},
+			}
+		}
+
+		It("enforce mode rejects an over-budget EndpointType on create", func() {
+			enforceVal := NewValidator(cost.ModeEnforce)
+			warnings, err := enforceVal.ValidateCreate(ctx, overbudgetType())
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("CEL cost verdict: OVER BUDGET"))
+			Expect(warnings).To(BeEmpty())
+		})
+
+		It("warn mode admits an over-budget EndpointType with admission warnings", func() {
+			warnVal := NewValidator(cost.ModeWarn)
+			warnings, err := warnVal.ValidateCreate(ctx, overbudgetType())
+			Expect(err).NotTo(HaveOccurred())
+			Expect(warnings).To(HaveLen(1))
+			Expect(warnings[0]).To(ContainSubstring("CEL cost verdict: OVER BUDGET"))
+		})
 	})
 })

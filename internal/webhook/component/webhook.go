@@ -91,6 +91,9 @@ func (v *Validator) ValidateCreate(ctx context.Context, obj runtime.Object) (adm
 	// Validate unique trait instance names
 	allErrs = append(allErrs, validateUniqueTraitInstanceNames(component)...)
 
+	// Note: Component parameters are validated against ComponentType openAPIV3Schema at ComponentRelease admission.
+	// We intentionally do not apply arbitrary fixed bounds here to remain decoupled and respect the PE's schema bounds.
+
 	if len(allErrs) > 0 {
 		return warnings, apierrors.NewInvalid(component.GroupVersionKind().GroupKind(), component.GetName(), allErrs)
 	}
@@ -124,6 +127,9 @@ func (v *Validator) ValidateUpdate(ctx context.Context, oldObj, newObj runtime.O
 
 	// Validate unique trait instance names
 	allErrs = append(allErrs, validateUniqueTraitInstanceNames(newComponent)...)
+
+	// Note: Component parameters are validated against ComponentType openAPIV3Schema at ComponentRelease admission.
+	// We intentionally do not apply arbitrary fixed bounds here to remain decoupled and respect the PE's schema bounds.
 
 	if len(allErrs) > 0 {
 		return warnings, apierrors.NewInvalid(newComponent.GroupVersionKind().GroupKind(), newComponent.GetName(), allErrs)

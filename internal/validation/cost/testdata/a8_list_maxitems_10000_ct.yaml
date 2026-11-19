@@ -1,0 +1,28 @@
+// Scenario: A8_ComponentType - List with maxItems: 10000 (Testing Clamp and Soundness)
+// Invariant: If Guard unclamped, Assumed size must >= Permitted size (10,000 items).
+// Expected result: Computed at 10,000 items; static estimate must be >= runtime CEL cost.
+apiVersion: openchoreo.dev/v1alpha1
+kind: ComponentType
+metadata:
+  name: a8-list-maxitems-10k
+  namespace: default
+spec:
+  workloadType: deployment
+  parameters:
+    openAPIV3Schema:
+      type: object
+      properties:
+        records:
+          type: array
+          maxItems: 10000
+          items:
+            type: integer
+  resources:
+    - id: deployment
+      template:
+        apiVersion: apps/v1
+        kind: Deployment
+        metadata:
+          name: test-app
+        spec:
+          replicas: "${parameters.records.map(x, x).size() + 1}"

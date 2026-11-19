@@ -113,11 +113,7 @@ func evaluateOnePostRender(
 		return evaluatePostRenderSelection(ctx, engine, resources, p.label, nil, p.context, v, collected)
 	}
 
-	itemsRaw, err := engine.Render(ctx, v.ForEach, p.context)
-	if err != nil {
-		return collected.add(fmt.Errorf("%q post-render validation: forEach evaluation error: %w", p.label, err))
-	}
-	items, err := renderer.ToIterableItems(ctx, itemsRaw)
+	itemContexts, err := renderer.EvalForEach(ctx, engine, v.ForEach, v.Var, p.context)
 	if err != nil {
 		return collected.add(fmt.Errorf("%q post-render validation: invalid forEach result: %w", p.label, err))
 	}
@@ -125,9 +121,8 @@ func evaluateOnePostRender(
 	if varName == "" {
 		varName = "item"
 	}
-	for _, item := range items {
-		iterCtx := maps.Clone(p.context)
-		iterCtx[varName] = item
+	for _, iterCtx := range itemContexts {
+		item := iterCtx[varName]
 		if stop := evaluatePostRenderSelection(ctx, engine, resources, p.label,
 			iterationDescriber(varName, item), iterCtx, v, collected); stop {
 			return true

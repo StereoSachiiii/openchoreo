@@ -8,6 +8,7 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"k8s.io/apimachinery/pkg/runtime"
 
 	openchoreodevv1alpha1 "github.com/openchoreo/openchoreo/api/v1alpha1"
 )
@@ -126,6 +127,55 @@ var _ = Describe("Component Webhook", func() {
 			_, err := validator.ValidateCreate(ctx, wrongObj)
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("expected a Component object"))
+		})
+
+		const validComponentName = "valid-name"
+
+		It("should admit a Component with large parameters list without applying arbitrary fixed bounds", func() {
+			obj.Name = validComponentName
+			// 251 complex items (Component parameters are not arbitrarily restricted; schema validates at release time)
+			var items []string
+			for i := 0; i < 251; i++ {
+				items = append(items, `{"port":8080}`)
+			}
+			obj.Spec.Parameters = &runtime.RawExtension{
+				Raw: []byte(`{"endpoints":[` + strings.Join(items, ",") + `]}`),
+			}
+			_, err := validator.ValidateCreate(ctx, obj)
+			Expect(err).NotTo(HaveOccurred())
+		})
+
+		It("should admit a Component with 500 flat list items", func() {
+			obj.Name = validComponentName
+			var items []string
+			for i := 0; i < 500; i++ {
+				items = append(items, `"example.com"`)
+			}
+			obj.Spec.Parameters = &runtime.RawExtension{
+				Raw: []byte(`{"domains":[` + strings.Join(items, ",") + `]}`),
+			}
+			_, err := validator.ValidateCreate(ctx, obj)
+			Expect(err).NotTo(HaveOccurred())
+		})
+
+		It("should admit a Component with 1001 flat items and 17 nesting levels without Guard rejection", func() {
+			obj.Name = validComponentName
+			// 1,001 flat items (exceeds MaxFlatListItems = 1000)
+			var items []string
+			for i := 0; i < 1001; i++ {
+				items = append(items, `"test-item"`)
+			}
+			// 17 nesting levels (exceeds MaxNestingDepth = 16)
+			nested := `"leaf"`
+			for i := 0; i < 17; i++ {
+				nested = `{"depth":` + nested + `}`
+			}
+
+			obj.Spec.Parameters = &runtime.RawExtension{
+				Raw: []byte(`{"items":[` + strings.Join(items, ",") + `],"tree":` + nested + `}`),
+			}
+			_, err := validator.ValidateCreate(ctx, obj)
+			Expect(err).NotTo(HaveOccurred(), "Component webhook must not apply Guard caps to parameters")
 		})
 	})
 

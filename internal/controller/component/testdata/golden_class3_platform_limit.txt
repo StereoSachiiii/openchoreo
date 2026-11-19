@@ -1,0 +1,4 @@
+Failed to handle autoDeploy: parameters exceed a platform-wide limit:
+  • spec.parameters: nested 17 levels deep, the platform allows at most 16 (exceeded maximum allowable nesting depth)
+    (this limit is not set by your ComponentType)
+To fix: flatten the structure, or ask your platform team if the limit can change.

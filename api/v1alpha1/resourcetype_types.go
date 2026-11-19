@@ -35,6 +35,7 @@ type ResourceTypeSpec struct {
 	// +optional
 	// +listType=map
 	// +listMapKey=name
+	// +kubebuilder:validation:MaxItems=100
 	Outputs []ResourceTypeOutput `json:"outputs,omitempty"`
 
 	// Resources are the Kubernetes manifests the ResourceType provisioner emits
@@ -43,6 +44,7 @@ type ResourceTypeSpec struct {
 	// +kubebuilder:validation:MinItems=1
 	// +listType=map
 	// +listMapKey=id
+	// +kubebuilder:validation:MaxItems=100
 	Resources []ResourceTypeManifest `json:"resources"`
 }
 

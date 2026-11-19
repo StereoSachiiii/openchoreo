@@ -62,20 +62,25 @@ type Container struct {
 	// OCI image to run (digest or tag).
 	// +kubebuilder:validation:Required
 	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=1024
 	Image string `json:"image"`
 
 	// Container entrypoint & args.
 	// +optional
+	// +kubebuilder:validation:MaxItems=32
 	Command []string `json:"command,omitempty"`
 	// +optional
+	// +kubebuilder:validation:MaxItems=128
 	Args []string `json:"args,omitempty"`
 
 	// Explicit environment variables.
 	// +optional
+	// +kubebuilder:validation:MaxItems=1024
 	Env []EnvVar `json:"env,omitempty"`
 
 	// File configurations.
 	// +optional
+	// +kubebuilder:validation:MaxItems=256
 	Files []FileVar `json:"files,omitempty"`
 }
 
@@ -124,6 +129,7 @@ type WorkloadEndpoint struct {
 	// that read it; new clients do not set it.
 	// +optional
 	// +listType=set
+	// +kubebuilder:validation:MaxItems=4
 	Visibility []EndpointVisibility `json:"visibility,omitempty"`
 
 	// Protocol is the protocol the endpoint serves. Replaces type; the admission
@@ -337,6 +343,7 @@ type WorkloadTemplateSpec struct {
 	// Endpoints define simple network endpoints for basic port exposure.
 	// The key is the endpoint name, and the value is the endpoint specification.
 	// +optional
+	// +kubebuilder:validation:MaxProperties=128
 	Endpoints map[string]WorkloadEndpoint `json:"endpoints,omitempty"`
 
 	// Dependencies define the dependencies of this workload on other components.

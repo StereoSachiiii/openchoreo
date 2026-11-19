@@ -136,6 +136,7 @@ type ObservabilityAlertNotifications struct {
 	// Channels defines the channels to send notifications to.
 	// +kubebuilder:validation:Required
 	// +kubebuilder:validation:MinItems=1
+	// +kubebuilder:validation:MaxItems=50
 	// +listType=set
 	Channels []NotificationChannelName `json:"channels"`
 }

@@ -4,17 +4,18 @@
 package component
 
 import (
+	"fmt"
 	"reflect"
 
 	"github.com/google/cel-go/cel"
 	apiextschema "k8s.io/apiextensions-apiserver/pkg/apiserver/schema"
-	"k8s.io/apiextensions-apiserver/pkg/apiserver/schema/cel/model"
 	apiservercel "k8s.io/apiserver/pkg/cel"
 
 	"github.com/openchoreo/openchoreo/internal/pipeline/component/context"
 	endpointpipeline "github.com/openchoreo/openchoreo/internal/pipeline/endpoint"
 	"github.com/openchoreo/openchoreo/internal/template"
-	"github.com/openchoreo/openchoreo/internal/validation/component/decltype"
+	"github.com/openchoreo/openchoreo/internal/validation/decltype"
+	"github.com/openchoreo/openchoreo/internal/validation/schemautil"
 )
 
 // schemaBasedFields are populated from user-provided schemas, not reflection.
@@ -42,76 +43,97 @@ type SchemaOptions struct {
 	EnvironmentConfigsSchema *apiextschema.Structural
 }
 
-// buildComponentCELEnv creates a schema-aware CEL environment for component validation.
-func buildComponentCELEnv(opts SchemaOptions) (*cel.Env, *apiservercel.DeclTypeProvider, error) {
+// BuildComponentCELEnv creates a schema-aware CEL environment for component validation (exposed for tests).
+func BuildComponentCELEnv(opts SchemaOptions) (*cel.Env, *apiservercel.DeclTypeProvider, error) {
+	env, prov, _, err := BuildComponentCELEnvWithRoots(opts)
+	return env, prov, err
+}
+
+// BuildComponentCELEnvWithRoots creates a schema-aware CEL environment and returns the roots map.
+func BuildComponentCELEnvWithRoots(opts SchemaOptions) (*cel.Env, *apiservercel.DeclTypeProvider, map[string]*apiservercel.DeclType, error) {
 	return buildCELEnv(componentContextFields, opts)
 }
 
-// buildTraitCELEnv creates a schema-aware CEL environment for trait validation.
-func buildTraitCELEnv(opts SchemaOptions) (*cel.Env, *apiservercel.DeclTypeProvider, error) {
+// BuildTraitCELEnv creates a schema-aware CEL environment for trait validation (exposed for tests).
+func BuildTraitCELEnv(opts SchemaOptions) (*cel.Env, *apiservercel.DeclTypeProvider, error) {
+	env, prov, _, err := BuildTraitCELEnvWithRoots(opts)
+	return env, prov, err
+}
+
+// BuildTraitCELEnvWithRoots creates a schema-aware CEL environment and returns the roots map.
+func BuildTraitCELEnvWithRoots(opts SchemaOptions) (*cel.Env, *apiservercel.DeclTypeProvider, map[string]*apiservercel.DeclType, error) {
 	return buildCELEnv(traitContextFields, opts)
 }
 
-// buildEndpointCELEnv creates a schema-aware CEL environment for EndpointType
-// validation. Its variables come from the endpoint pipeline's BaseContext, and
-// it carries only the base template extensions: the component-context helpers
-// (workload.*, configurations.*, ...) are not available when an EndpointType
-// renders, so accepting them here would let through templates that fail later.
-func buildEndpointCELEnv(opts SchemaOptions) (*cel.Env, *apiservercel.DeclTypeProvider, error) {
+// BuildEndpointCELEnv creates a schema-aware CEL environment for endpoint validation.
+//
+// Deprecated: Use endpoint.BuildEndpointCELEnv directly. Retained for backwards compatibility.
+func BuildEndpointCELEnv(opts SchemaOptions) (*cel.Env, *apiservercel.DeclTypeProvider, map[string]*apiservercel.DeclType, error) {
 	baseEnv, err := cel.NewEnv(template.BaseCELExtensions()...)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, fmt.Errorf("failed to create base CEL environment: %w", err)
 	}
 	return buildCELEnvOn(baseEnv, endpointContextFields, opts)
+}
+
+// buildComponentValidator creates a schema-aware CEL validator for component validation.
+func buildComponentValidator(opts SchemaOptions) (*CELValidator, error) {
+	return buildValidatorFromFields(componentContextFields, opts)
+}
+
+// buildTraitValidator creates a schema-aware CEL validator for trait validation.
+func buildTraitValidator(opts SchemaOptions) (*CELValidator, error) {
+	return buildValidatorFromFields(traitContextFields, opts)
+}
+
+// buildEndpointValidator creates a schema-aware CEL validator for EndpointType validation.
+func buildEndpointValidator(opts SchemaOptions) (*CELValidator, error) {
+	env, provider, roots, err := BuildEndpointCELEnv(opts)
+	if err != nil {
+		return nil, err
+	}
+	return &CELValidator{
+		baseEnv:      env,
+		typeProvider: provider,
+		rootTypes:    roots,
+	}, nil
+}
+
+func buildValidatorFromFields(contextFields []decltype.FieldInfo, opts SchemaOptions) (*CELValidator, error) {
+	env, provider, roots, err := buildCELEnv(contextFields, opts)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create CEL environment: %w", err)
+	}
+	return &CELValidator{
+		baseEnv:      env,
+		typeProvider: provider,
+		rootTypes:    roots,
+	}, nil
 }
 
 // buildCELEnv creates a schema-aware CEL environment with the given context fields and schema options.
 // Schema-based fields (parameters, environmentConfigs) are derived from the provided schemas.
 // Reflection-based fields (metadata, workload, etc.) come from the contextFields slice.
-func buildCELEnv(contextFields []decltype.FieldInfo, opts SchemaOptions) (*cel.Env, *apiservercel.DeclTypeProvider, error) {
+func buildCELEnv(contextFields []decltype.FieldInfo, opts SchemaOptions) (*cel.Env, *apiservercel.DeclTypeProvider, map[string]*apiservercel.DeclType, error) {
 	baseEnv, err := createBaseEnv()
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	return buildCELEnvOn(baseEnv, contextFields, opts)
 }
 
-// buildCELEnvOn extends baseEnv with the schema-based and reflection-based
-// variables.
+// buildCELEnvOn extends baseEnv with the schema-based and reflection-based variables.
 func buildCELEnvOn(
 	baseEnv *cel.Env, contextFields []decltype.FieldInfo, opts SchemaOptions,
-) (*cel.Env, *apiservercel.DeclTypeProvider, error) {
-	numFields := len(contextFields) + len(schemaBasedFields)
-	declTypes := make([]*apiservercel.DeclType, 0, numFields)
-	varOpts := make([]cel.EnvOption, 0, numFields)
-
-	// Register schema-based fields
-	paramType := schemaToTypeOrEmpty(opts.ParametersSchema, "Parameters")
-	declTypes = append(declTypes, paramType)
-	varOpts = append(varOpts, cel.Variable("parameters", paramType.CelType()))
-
-	environmentConfigsType := schemaToTypeOrEmpty(opts.EnvironmentConfigsSchema, "EnvironmentConfigs")
-	declTypes = append(declTypes, environmentConfigsType)
-	varOpts = append(varOpts, cel.Variable("environmentConfigs", environmentConfigsType.CelType()))
-
-	// Register reflection-based fields
-	for _, f := range contextFields {
-		declTypes = append(declTypes, f.DeclType)
-		varOpts = append(varOpts, cel.Variable(f.Name, f.DeclType.CelType()))
-	}
-
-	provider := apiservercel.NewDeclTypeProvider(declTypes...)
-	providerOpts, err := provider.EnvOptions(baseEnv.CELTypeProvider())
-	if err != nil {
-		return nil, nil, err
-	}
-	varOpts = append(varOpts, providerOpts...)
-
-	env, err := baseEnv.Extend(varOpts...)
-	if err != nil {
-		return nil, nil, err
-	}
-	return env, provider, nil
+) (*cel.Env, *apiservercel.DeclTypeProvider, map[string]*apiservercel.DeclType, error) {
+	return schemautil.BuildCELEnv(schemautil.EnvSpec{
+		BaseEnv: baseEnv,
+		Schemas: []schemautil.NamedSchema{
+			{Name: "parameters", Schema: opts.ParametersSchema, TypeName: "Parameters"},
+			{Name: "environmentConfigs", Schema: opts.EnvironmentConfigsSchema, TypeName: "EnvironmentConfigs"},
+		},
+		ContextFields: contextFields,
+	})
 }
 
 // createBaseEnv creates the base CEL environment with standard extensions.
@@ -119,57 +141,4 @@ func createBaseEnv() (*cel.Env, error) {
 	baseEnvOpts := template.BaseCELExtensions()
 	baseEnvOpts = append(baseEnvOpts, context.CELExtensions()...)
 	return cel.NewEnv(baseEnvOpts...)
-}
-
-// schemaToTypeOrEmpty converts a structural schema to a DeclType,
-// returning an empty object type if schema is nil or conversion fails.
-func schemaToTypeOrEmpty(schema *apiextschema.Structural, typeName string) *apiservercel.DeclType {
-	if schema != nil {
-		normalized := normalizeForCEL(schema)
-		if dt := model.SchemaDeclType(normalized, false); dt != nil {
-			return dt.MaybeAssignTypeName(typeName)
-		}
-	}
-	return apiservercel.NewObjectType(typeName, map[string]*apiservercel.DeclField{})
-}
-
-// normalizeForCEL returns a shallow-cloned structural schema where nodes that
-// have no top-level type but carry oneOf/anyOf/allOf variants are marked as
-// x-kubernetes-int-or-string. This makes the Kubernetes SchemaDeclType
-// function treat them as CEL dyn values instead of returning nil and
-// silently dropping the enclosing field from the CEL type environment.
-func normalizeForCEL(s *apiextschema.Structural) *apiextschema.Structural {
-	if s == nil {
-		return nil
-	}
-	out := *s
-
-	if out.Type == "" && hasCompositionValidation(out.ValueValidation) {
-		out.Extensions.XIntOrString = true
-	}
-
-	if out.Items != nil {
-		out.Items = normalizeForCEL(out.Items)
-	}
-
-	if len(out.Properties) > 0 {
-		props := make(map[string]apiextschema.Structural, len(out.Properties))
-		for k, v := range out.Properties {
-			normalized := normalizeForCEL(&v)
-			props[k] = *normalized
-		}
-		out.Properties = props
-	}
-
-	if out.AdditionalProperties != nil && out.AdditionalProperties.Structural != nil {
-		ap := *out.AdditionalProperties
-		ap.Structural = normalizeForCEL(ap.Structural)
-		out.AdditionalProperties = &ap
-	}
-
-	return &out
-}
-
-func hasCompositionValidation(v *apiextschema.ValueValidation) bool {
-	return v != nil && (len(v.OneOf) > 0 || len(v.AnyOf) > 0 || len(v.AllOf) > 0)
 }

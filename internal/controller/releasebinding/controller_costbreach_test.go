@@ -13,6 +13,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 
 	openchoreov1alpha1 "github.com/openchoreo/openchoreo/api/v1alpha1"
+	"github.com/openchoreo/openchoreo/internal/limits"
 	componentpipeline "github.com/openchoreo/openchoreo/internal/pipeline/component"
 )
 
@@ -26,10 +27,10 @@ const hostileExpr = "${size(lists.range(2000).map(x, lists.range(2000).map(y, x 
 // limit they actually trip.
 const costLimitSentinel = "cel expression cost limit exceeded"
 
-// overForEachCap is one item past the renderer's maxForEachItems fan-out cap. The cap is
-// unexported, so the number is restated here; the spec below fails loudly if the two drift
-// apart, because a forEach within the cap renders successfully.
-const overForEachCap = 101
+// overForEachCap is one item past the renderer's MaxForEachItemsPerLoop fan-out cap. The
+// spec below fails loudly if the item count does not exceed the loop limit, because a
+// forEach within the cap renders successfully.
+const overForEachCap = int(limits.MaxForEachItemsPerLoop) + 1
 
 // runawayTemplate is minimalTemplate with the hostile expression hidden in a
 // label, so rendering the resource trips the cost guard.

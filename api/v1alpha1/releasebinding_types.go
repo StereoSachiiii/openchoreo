@@ -151,10 +151,12 @@ type PendingResourceDependency struct {
 type ContainerOverride struct {
 	// Explicit environment variables.
 	// +optional
+	// +kubebuilder:validation:MaxItems=1024
 	Env []EnvVar `json:"env,omitempty"`
 
 	// File configurations.
 	// +optional
+	// +kubebuilder:validation:MaxItems=256
 	Files []FileVar `json:"files,omitempty"`
 }
 

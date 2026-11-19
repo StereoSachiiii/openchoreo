@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 
+	apiextschema "k8s.io/apiextensions-apiserver/pkg/apiserver/schema"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/validation/field"
@@ -18,7 +19,9 @@ import (
 
 	openchoreodevv1alpha1 "github.com/openchoreo/openchoreo/api/v1alpha1"
 	"github.com/openchoreo/openchoreo/internal/validation/component"
+	"github.com/openchoreo/openchoreo/internal/validation/cost"
 	"github.com/openchoreo/openchoreo/internal/validation/schemautil"
+	workflowvalidation "github.com/openchoreo/openchoreo/internal/validation/workflow"
 )
 
 // nolint:unused
@@ -27,8 +30,13 @@ var workflowlog = logf.Log.WithName("workflow-resource")
 
 // SetupWorkflowWebhookWithManager registers the webhook for Workflow in the manager.
 func SetupWorkflowWebhookWithManager(mgr ctrl.Manager) error {
+	return SetupWorkflowWebhookWithManagerAndCostLimit(mgr, 0)
+}
+
+// SetupWorkflowWebhookWithManagerAndCostLimit registers the webhook with a custom per-expression CEL cost limit.
+func SetupWorkflowWebhookWithManagerAndCostLimit(mgr ctrl.Manager, celCostLimit uint64) error {
 	return ctrl.NewWebhookManagedBy(mgr, &openchoreodevv1alpha1.Workflow{}).
-		WithCustomValidator(&Validator{}).
+		WithCustomValidator(NewValidator(cost.Mode(""), cost.WithExpressionLimit(celCostLimit))).
 		WithCustomDefaulter(&Defaulter{}).
 		Complete()
 }
@@ -37,42 +45,70 @@ func SetupWorkflowWebhookWithManager(mgr ctrl.Manager) error {
 
 // Validator validates Workflow resources
 // +kubebuilder:object:generate=false
-type Validator struct{}
+type Validator struct {
+	costChecker *cost.WebhookCostChecker
+}
+
+// NewValidator constructs a Validator wired with the WorkflowDomainEstimator.
+func NewValidator(mode cost.Mode, opts ...cost.Option) *Validator {
+	return &Validator{
+		costChecker: cost.NewWebhookCostChecker(&workflowvalidation.WorkflowDomainEstimator{}, mode, opts...),
+	}
+}
+
+func (v *Validator) getCostChecker() *cost.WebhookCostChecker {
+	if v.costChecker != nil {
+		return v.costChecker
+	}
+	return NewValidator("").costChecker
+}
 
 var _ webhook.CustomValidator = &Validator{}
 
 // ValidateCreate implements webhook.CustomValidator so a webhook will be registered for the type Workflow.
-func (v *Validator) ValidateCreate(_ context.Context, obj runtime.Object) (admission.Warnings, error) {
+func (v *Validator) ValidateCreate(ctx context.Context, obj runtime.Object) (admission.Warnings, error) {
 	wf, ok := obj.(*openchoreodevv1alpha1.Workflow)
 	if !ok {
 		return nil, fmt.Errorf("expected a Workflow object but got %T", obj)
 	}
 	workflowlog.Info("Validation for Workflow upon creation", "name", wf.GetName())
 
-	allErrs := ValidateWorkflowSpec(wf.Spec.RunTemplate, wf.Spec.Resources, wf.Spec.ExternalRefs, wf.Spec.Parameters)
+	paramSchema, allErrs := ValidateWorkflowSpecWithSchema(wf.Spec.RunTemplate, wf.Spec.Resources, wf.Spec.ExternalRefs, wf.Spec.Parameters)
 
 	if len(allErrs) > 0 {
 		return nil, apierrors.NewInvalid(wf.GroupVersionKind().GroupKind(), wf.GetName(), allErrs)
 	}
 
-	return nil, nil
+	return v.getCostChecker().ValidateCreate(ctx, wf, cost.SchemaPair{Parameters: paramSchema})
 }
 
 // ValidateUpdate implements webhook.CustomValidator so a webhook will be registered for the type Workflow.
-func (v *Validator) ValidateUpdate(_ context.Context, oldObj, newObj runtime.Object) (admission.Warnings, error) {
+func (v *Validator) ValidateUpdate(ctx context.Context, oldObj, newObj runtime.Object) (admission.Warnings, error) {
+	oldWf, ok := oldObj.(*openchoreodevv1alpha1.Workflow)
+	if !ok {
+		return nil, fmt.Errorf("expected a Workflow object for the oldObj but got %T", oldObj)
+	}
 	newWf, ok := newObj.(*openchoreodevv1alpha1.Workflow)
 	if !ok {
 		return nil, fmt.Errorf("expected a Workflow object for the newObj but got %T", newObj)
 	}
 	workflowlog.Info("Validation for Workflow upon update", "name", newWf.GetName())
 
-	allErrs := ValidateWorkflowSpec(newWf.Spec.RunTemplate, newWf.Spec.Resources, newWf.Spec.ExternalRefs, newWf.Spec.Parameters)
+	paramSchema, allErrs := ValidateWorkflowSpecWithSchema(newWf.Spec.RunTemplate, newWf.Spec.Resources, newWf.Spec.ExternalRefs, newWf.Spec.Parameters)
 
 	if len(allErrs) > 0 {
 		return nil, apierrors.NewInvalid(newWf.GroupVersionKind().GroupKind(), newWf.GetName(), allErrs)
 	}
 
-	return nil, nil
+	oldParamSchema, _ := schemautil.ExtractSchemasBestEffort(oldWf.Spec.Parameters, nil)
+
+	return v.getCostChecker().ValidateUpdate(
+		ctx,
+		oldWf,
+		newWf,
+		cost.SchemaPair{Parameters: oldParamSchema},
+		cost.SchemaPair{Parameters: paramSchema},
+	)
 }
 
 // ValidateDelete implements webhook.CustomValidator so a webhook will be registered for the type Workflow.
@@ -113,7 +149,19 @@ func ValidateWorkflowSpec(
 	externalRefs []openchoreodevv1alpha1.ExternalRef,
 	parameters *openchoreodevv1alpha1.SchemaSection,
 ) field.ErrorList {
+	_, errs := ValidateWorkflowSpecWithSchema(runTemplate, resources, externalRefs, parameters)
+	return errs
+}
+
+// ValidateWorkflowSpecWithSchema performs validation and returns the structural parameters schema.
+func ValidateWorkflowSpecWithSchema(
+	runTemplate *runtime.RawExtension,
+	resources []openchoreodevv1alpha1.WorkflowResource,
+	externalRefs []openchoreodevv1alpha1.ExternalRef,
+	parameters *openchoreodevv1alpha1.SchemaSection,
+) (*apiextschema.Structural, field.ErrorList) {
 	allErrs := field.ErrorList{}
+	var parametersSchema *apiextschema.Structural
 
 	// Validate runTemplate structure and namespace
 	runTemplatePath := field.NewPath("spec", "runTemplate")
@@ -164,11 +212,12 @@ func ValidateWorkflowSpec(
 
 	// Validate parameters schema
 	if parameters != nil {
-		_, _, schemaErrs := schemautil.ExtractAndValidateSchemas(parameters, nil, field.NewPath("spec"))
+		var schemaErrs field.ErrorList
+		parametersSchema, _, schemaErrs = schemautil.ExtractAndValidateSchemas(parameters, nil, field.NewPath("spec"))
 		allErrs = append(allErrs, schemaErrs...)
 	}
 
-	return allErrs
+	return parametersSchema, allErrs
 }
 
 // templateMetadata is used to extract metadata.namespace from a raw template

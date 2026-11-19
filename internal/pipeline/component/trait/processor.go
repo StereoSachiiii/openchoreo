@@ -11,10 +11,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"maps"
 	"strings"
 
 	"github.com/openchoreo/openchoreo/api/v1alpha1"
+	"github.com/openchoreo/openchoreo/internal/limits"
 	"github.com/openchoreo/openchoreo/internal/patch"
 	"github.com/openchoreo/openchoreo/internal/pipeline/component/renderer"
 	"github.com/openchoreo/openchoreo/internal/template"
@@ -22,20 +22,7 @@ import (
 
 // maxPatchOperations bounds the total number of rendered JSON Patch operations applied
 // across all target resources in one component render.
-//
-// forEach multiplies on both sides of a patch: a ComponentType can expand to hundreds of
-// resources, and a trait patch with its own forEach applies once per item to every matching
-// target, so items x targets grows as a product. That product is JSON-Patch work, not CEL
-// evaluation, so neither the per-expression cost limit nor the reconcile cost budget can see
-// it - each iteration renders the same cheap operations and then does unmetered work
-// proportional to the size of the resource it patches.
-//
-// The bound is per render because the counter lives on the Processor, which the component
-// pipeline builds fresh for each RenderComponent call, so every trait on a component draws
-// from the same allowance. Real samples measure in the tens of operations; 10,000 leaves
-// two orders of magnitude of headroom while capping the cross product well below the
-// million-application shape a hostile pair of forEach expressions can otherwise reach.
-const maxPatchOperations uint64 = 10_000
+const maxPatchOperations = limits.MaxPatchOperations
 
 // Processor handles trait creates and patches.
 //
@@ -237,34 +224,14 @@ func (p *Processor) applyPatchWithForEach(
 	traitPatch v1alpha1.TraitPatch,
 	baseContext map[string]any,
 ) error {
-	// Evaluate the forEach expression to get the list of items
-	itemsRaw, err := p.templateEngine.Render(ctx, traitPatch.ForEach, baseContext)
+	// Evaluate the forEach expression to get per-iteration contexts
+	itemContexts, err := renderer.EvalForEach(ctx, p.templateEngine, traitPatch.ForEach, traitPatch.Var, baseContext)
 	if err != nil {
 		return fmt.Errorf("failed to evaluate forEach expression '%s' for trait %s patch #%d: %w", template.TruncateFragment(traitPatch.ForEach), traitName, patchIndex, err)
 	}
 
-	// Convert result to iterable items (supports arrays and maps)
-	items, err := renderer.ToIterableItems(ctx, itemsRaw)
-	if err != nil {
-		return fmt.Errorf("invalid forEach result for trait %s patch #%d: %w", traitName, patchIndex, err)
-	}
-
-	// Determine the variable name for each iteration (defaults to "item")
-	varName := traitPatch.Var
-	if varName == "" {
-		varName = "item"
-	}
-
-	// Iterate through each item
-	for i, item := range items {
-		// Shallow clone context for this iteration to avoid cross-iteration contamination.
-		// A shallow copy is sufficient because:
-		//   - We only add one new key (the loop variable)
-		//   - The template engine doesn't mutate map values (only reads them)
-		//   - We need isolation so one iteration's loop variable doesn't affect another
-		iterContext := maps.Clone(baseContext)
-		iterContext[varName] = item
-
+	// Iterate through each item context
+	for i, iterContext := range itemContexts {
 		// Apply patch operations with this iteration's context
 		if err := p.applyPatchOnce(ctx, resources, traitName, patchIndex, traitPatch, iterContext); err != nil {
 			return fmt.Errorf("forEach iteration %d failed: %w", i, err)
@@ -594,25 +561,12 @@ func (p *Processor) collectRemovalsForEntry(
 		return p.collectRemovalsOnce(ctx, resources, traitName, removeIndex, remove, baseContext, toRemove)
 	}
 
-	itemsRaw, err := p.templateEngine.Render(ctx, remove.ForEach, baseContext)
+	itemContexts, err := renderer.EvalForEach(ctx, p.templateEngine, remove.ForEach, remove.Var, baseContext)
 	if err != nil {
 		return fmt.Errorf("failed to evaluate forEach expression '%s' for trait %s remove #%d: %w", template.TruncateFragment(remove.ForEach), traitName, removeIndex, err)
 	}
 
-	items, err := renderer.ToIterableItems(ctx, itemsRaw)
-	if err != nil {
-		return fmt.Errorf("invalid forEach result for trait %s remove #%d: %w", traitName, removeIndex, err)
-	}
-
-	varName := remove.Var
-	if varName == "" {
-		varName = "item"
-	}
-
-	for i, item := range items {
-		iterContext := maps.Clone(baseContext)
-		iterContext[varName] = item
-
+	for i, iterContext := range itemContexts {
 		if err := p.collectRemovalsOnce(ctx, resources, traitName, removeIndex, remove, iterContext, toRemove); err != nil {
 			return fmt.Errorf("forEach iteration %d failed: %w", i, err)
 		}

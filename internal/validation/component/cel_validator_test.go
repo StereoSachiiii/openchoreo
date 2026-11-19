@@ -382,3 +382,25 @@ func TestCELValidator_GetTypeProvider(t *testing.T) {
 	require.NoError(t, err)
 	assert.NotNil(t, validator.GetTypeProvider())
 }
+
+func TestCELValidator_ResourceEnvironment(t *testing.T) {
+	validator, err := NewCELValidator(ComponentTypeResource, SchemaOptions{})
+	require.NoError(t, err)
+
+	t.Run("empty forEach returns baseEnv", func(t *testing.T) {
+		env, err := validator.ResourceEnvironment("", "")
+		require.NoError(t, err)
+		assert.Equal(t, validator.GetBaseEnv(), env)
+	})
+
+	t.Run("forEach with list extends environment with loop var", func(t *testing.T) {
+		env, err := validator.ResourceEnvironment("${['item1', 'item2']}", "elem")
+		require.NoError(t, err)
+		require.NotNil(t, env)
+
+		// Verify elem can be compiled in the returned environment
+		ast, issues := env.Compile("elem == 'item1'")
+		require.Nil(t, issues)
+		require.NotNil(t, ast)
+	})
+}

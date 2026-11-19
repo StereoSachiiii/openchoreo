@@ -17,6 +17,7 @@ import (
 
 	openchoreodevv1alpha1 "github.com/openchoreo/openchoreo/api/v1alpha1"
 	"github.com/openchoreo/openchoreo/internal/validation/component"
+	"github.com/openchoreo/openchoreo/internal/validation/cost"
 	"github.com/openchoreo/openchoreo/internal/validation/schemautil"
 )
 
@@ -26,8 +27,13 @@ var traitlog = logf.Log.WithName("trait-resource")
 
 // SetupTraitWebhookWithManager registers the webhook for Trait in the manager.
 func SetupTraitWebhookWithManager(mgr ctrl.Manager) error {
+	return SetupTraitWebhookWithManagerAndCostLimit(mgr, 0)
+}
+
+// SetupTraitWebhookWithManagerAndCostLimit registers the webhook with a custom per-expression CEL cost limit.
+func SetupTraitWebhookWithManagerAndCostLimit(mgr ctrl.Manager, celCostLimit uint64) error {
 	return ctrl.NewWebhookManagedBy(mgr, &openchoreodevv1alpha1.Trait{}).
-		WithCustomValidator(&Validator{}).
+		WithCustomValidator(NewValidator(cost.Mode(""), cost.WithExpressionLimit(celCostLimit))).
 		Complete()
 }
 
@@ -35,12 +41,28 @@ func SetupTraitWebhookWithManager(mgr ctrl.Manager) error {
 
 // Validator validates Trait resources
 // +kubebuilder:object:generate=false
-type Validator struct{}
+type Validator struct {
+	costChecker *cost.WebhookCostChecker
+}
+
+// NewValidator constructs a Validator wired with the TraitDomainEstimator.
+func NewValidator(mode cost.Mode, opts ...cost.Option) *Validator {
+	return &Validator{
+		costChecker: cost.NewWebhookCostChecker(&component.TraitDomainEstimator{}, mode, opts...),
+	}
+}
+
+func (v *Validator) getCostChecker() *cost.WebhookCostChecker {
+	if v.costChecker != nil {
+		return v.costChecker
+	}
+	return NewValidator("").costChecker
+}
 
 var _ webhook.CustomValidator = &Validator{}
 
 // ValidateCreate implements webhook.CustomValidator so a webhook will be registered for the type Trait.
-func (v *Validator) ValidateCreate(_ context.Context, obj runtime.Object) (admission.Warnings, error) {
+func (v *Validator) ValidateCreate(ctx context.Context, obj runtime.Object) (admission.Warnings, error) {
 	trait, ok := obj.(*openchoreodevv1alpha1.Trait)
 	if !ok {
 		return nil, fmt.Errorf("expected a Trait object but got %T", obj)
@@ -66,11 +88,15 @@ func (v *Validator) ValidateCreate(_ context.Context, obj runtime.Object) (admis
 		return nil, apierrors.NewInvalid(trait.GroupVersionKind().GroupKind(), trait.GetName(), allErrs)
 	}
 
-	return nil, nil
+	// Admission cost analysis via WebhookCostChecker contract
+	return v.getCostChecker().ValidateCreate(ctx, trait, cost.SchemaPair{
+		Parameters:         parametersSchema,
+		EnvironmentConfigs: envConfigsSchema,
+	})
 }
 
 // ValidateUpdate implements webhook.CustomValidator so a webhook will be registered for the type Trait.
-func (v *Validator) ValidateUpdate(_ context.Context, oldObj, newObj runtime.Object) (admission.Warnings, error) {
+func (v *Validator) ValidateUpdate(ctx context.Context, oldObj, newObj runtime.Object) (admission.Warnings, error) {
 	newTrait, ok := newObj.(*openchoreodevv1alpha1.Trait)
 	if !ok {
 		return nil, fmt.Errorf("expected a Trait object for the newObj but got %T", newObj)
@@ -96,7 +122,21 @@ func (v *Validator) ValidateUpdate(_ context.Context, oldObj, newObj runtime.Obj
 		return nil, apierrors.NewInvalid(newTrait.GroupVersionKind().GroupKind(), newTrait.GetName(), allErrs)
 	}
 
-	return nil, nil
+	var oldSchemas cost.SchemaPair
+	if oldTrait, ok := oldObj.(*openchoreodevv1alpha1.Trait); ok {
+		oldSchemas.Parameters, oldSchemas.EnvironmentConfigs = schemautil.ExtractSchemasBestEffort(
+			oldTrait.Spec.Parameters, oldTrait.Spec.EnvironmentConfigs,
+		)
+	}
+
+	// Admission cost ratchet evaluation via WebhookCostChecker contract
+	return v.getCostChecker().ValidateUpdate(
+		ctx,
+		oldObj,
+		newObj,
+		oldSchemas,
+		cost.SchemaPair{Parameters: parametersSchema, EnvironmentConfigs: envConfigsSchema},
+	)
 }
 
 // ValidateDelete implements webhook.CustomValidator so a webhook will be registered for the type Trait.

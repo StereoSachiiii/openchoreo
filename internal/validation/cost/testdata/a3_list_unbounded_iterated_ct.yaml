@@ -1,0 +1,27 @@
+// Scenario: A3_ComponentType - List with no maxItems, expression iterating it with a size-sensitive operation
+// Invariant: Missing maxItems forces fallback to (3 MiB - 2) / (minSize + 1) = ~1,048,575 items, exceeding budget.
+// Expected result: Rejected for cost. Message names the expression and the field.
+apiVersion: openchoreo.dev/v1alpha1
+kind: ComponentType
+metadata:
+  name: a3-list-unbounded-iterated
+  namespace: default
+spec:
+  workloadType: deployment
+  parameters:
+    openAPIV3Schema:
+      type: object
+      properties:
+        tags:
+          type: array
+          items:
+            type: string
+  resources:
+    - id: deployment
+      template:
+        apiVersion: apps/v1
+        kind: Deployment
+        metadata:
+          name: test-app
+        spec:
+          replicas: "${parameters.tags.map(t, t).size() + 1}"

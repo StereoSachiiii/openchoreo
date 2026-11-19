@@ -1,0 +1,25 @@
+// Scenario: C14_MaxItems - ComponentRelease with items exceeding maxItems
+// Invariant: validateParamsAgainstSchema rejects array exceeding maxItems.
+// Expected result: Rejected with field.TooMany / field.Invalid at spec.componentProfile.parameters.items
+apiVersion: openchoreo.dev/v1alpha1
+kind: ComponentRelease
+metadata:
+  name: c14-maxitems-fail
+  namespace: default
+spec:
+  componentType:
+    name: web-service
+    spec:
+      workloadType: deployment
+      parameters:
+        openAPIV3Schema:
+          type: object
+          properties:
+            items:
+              type: array
+              maxItems: 2
+              items:
+                type: string
+  componentProfile:
+    parameters:
+      items: ["a", "b", "c"]

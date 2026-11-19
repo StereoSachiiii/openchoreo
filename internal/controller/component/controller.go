@@ -182,7 +182,7 @@ func (r *Reconciler) reconcileWithComponentType(ctx context.Context, comp *openc
 		latest, err := r.handleAutoDeploy(ctx, comp, ct, workload, traits, clusterTraits, firstEnv, "", comp.Status.LatestRelease)
 		comp.Status.LatestRelease = latest
 		if err != nil {
-			msg := fmt.Sprintf("Failed to handle autoDeploy: %v", err)
+			msg := FormatAutoDeployError(comp, ct, err)
 			controller.MarkFalseCondition(comp, ConditionReady, ReasonAutoDeployFailed, msg)
 			logger.Error(err, "Failed to handle autoDeploy")
 			// Do not retry permanent admission/validation errors; emit an event so the

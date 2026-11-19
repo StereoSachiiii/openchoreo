@@ -6,10 +6,20 @@ package component
 import (
 	"testing"
 
+	"github.com/google/cel-go/cel"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	apiextschema "k8s.io/apiextensions-apiserver/pkg/apiserver/schema"
+	apiservercel "k8s.io/apiserver/pkg/cel"
 )
+
+func buildComponentCELEnv(opts SchemaOptions) (*cel.Env, *apiservercel.DeclTypeProvider, error) {
+	return BuildComponentCELEnv(opts)
+}
+
+func buildTraitCELEnv(opts SchemaOptions) (*cel.Env, *apiservercel.DeclTypeProvider, error) {
+	return BuildTraitCELEnv(opts)
+}
 
 func TestBuildComponentCELEnv_WithParametersSchema(t *testing.T) {
 	// Build a structural schema for parameters

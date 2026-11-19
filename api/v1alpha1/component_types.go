@@ -68,6 +68,7 @@ type ComponentSpec struct {
 	// Traits to compose into this component
 	// Each trait can be instantiated multiple times with different instanceNames
 	// +optional
+	// +kubebuilder:validation:MaxItems=100
 	Traits []ComponentTrait `json:"traits,omitempty"`
 
 	// Workflow defines the workflow configuration for building the component.

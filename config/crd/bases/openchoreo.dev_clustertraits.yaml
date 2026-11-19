@@ -96,6 +96,7 @@ spec:
                   x-kubernetes-validations:
                   - message: var is required when forEach is specified
                     rule: '!has(self.forEach) || has(self.var)'
+                maxItems: 100
                 type: array
               environmentConfigs:
                 description: EnvironmentConfigs defines per-environment configurations
@@ -163,6 +164,7 @@ spec:
                         - op
                         - path
                         type: object
+                      maxItems: 100
                       minItems: 1
                       type: array
                     target:
@@ -217,6 +219,7 @@ spec:
                   x-kubernetes-validations:
                   - message: var is required when forEach is specified
                     rule: '!has(self.forEach) || has(self.var)'
+                maxItems: 100
                 type: array
               postRenderValidations:
                 description: |-
@@ -313,6 +316,7 @@ spec:
                   x-kubernetes-validations:
                   - message: var is required when forEach is specified
                     rule: '!has(self.forEach) || has(self.var)'
+                maxItems: 100
                 type: array
               preRenderValidations:
                 description: |-
@@ -338,6 +342,7 @@ spec:
                   - message
                   - rule
                   type: object
+                maxItems: 100
                 type: array
               removes:
                 description: |-
@@ -407,6 +412,7 @@ spec:
                   x-kubernetes-validations:
                   - message: var is required when forEach is specified
                     rule: '!has(self.forEach) || has(self.var)'
+                maxItems: 100
                 type: array
               validations:
                 description: |-
@@ -433,6 +439,7 @@ spec:
                   - message
                   - rule
                   type: object
+                maxItems: 100
                 type: array
             type: object
             x-kubernetes-validations:

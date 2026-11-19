@@ -199,6 +199,7 @@ spec:
                     items:
                       pattern: ^[a-zA-Z0-9!#$%&'*+/=?^_~-]+(?:\.[a-zA-Z0-9!#$%&'*+/=?^_~-]+)*@[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?)*$
                       type: string
+                    maxItems: 50
                     minItems: 1
                     type: array
                 required:

@@ -9,12 +9,13 @@ import (
 
 	"github.com/google/cel-go/cel"
 	apiextschema "k8s.io/apiextensions-apiserver/pkg/apiserver/schema"
-	"k8s.io/apiextensions-apiserver/pkg/apiserver/schema/cel/model"
 	apiservercel "k8s.io/apiserver/pkg/cel"
 
+	"github.com/openchoreo/openchoreo/internal/limits"
 	resourcepipeline "github.com/openchoreo/openchoreo/internal/pipeline/resource"
 	"github.com/openchoreo/openchoreo/internal/template"
-	"github.com/openchoreo/openchoreo/internal/validation/component/decltype"
+	"github.com/openchoreo/openchoreo/internal/validation/decltype"
+	"github.com/openchoreo/openchoreo/internal/validation/schemautil"
 )
 
 // schemaBasedFields are populated from user-provided schemas, not reflection.
@@ -27,7 +28,7 @@ var schemaBasedFields = map[string]bool{
 
 // resourceContextFields are the CEL variables declared from the pipeline's
 // BaseContext via reflection. Mirrors internal/validation/component.cel_env's
-// componentContextFields — single source of truth for the CEL surface lives
+// componentContextFields: the single source of truth for the CEL surface lives
 // on the pipeline's BaseContext type.
 var resourceContextFields = decltype.ExtractFields(
 	reflect.TypeFor[resourcepipeline.BaseContext](),
@@ -42,42 +43,53 @@ type SchemaOptions struct {
 	EnvironmentConfigsSchema *apiextschema.Structural
 }
 
-// buildResourceCELEnv creates a schema-aware CEL environment for ResourceType
+// BuildResourceCELEnv creates a schema-aware CEL environment for ResourceType
 // and ClusterResourceType validation. The base env exposes metadata,
 // parameters, environmentConfigs, and dataplane as top-level variables.
-// applied.<id> is intentionally not in scope; extendEnvWithApplied layers it
+// applied.<id> is intentionally not in scope; ExtendEnvWithApplied layers it
 // on for outputs and readyWhen validation.
-func buildResourceCELEnv(opts SchemaOptions) (*cel.Env, error) {
+func BuildResourceCELEnv(opts SchemaOptions) (*cel.Env, error) {
+	env, _, _, err := BuildResourceCELEnvWithRoots(opts)
+	return env, err
+}
+
+// BuildResourceCELEnvWithRoots creates a schema-aware CEL environment and returns the roots map.
+func BuildResourceCELEnvWithRoots(opts SchemaOptions) (*cel.Env, *apiservercel.DeclTypeProvider, map[string]*apiservercel.DeclType, error) {
 	baseEnv, err := createBaseEnv()
 	if err != nil {
-		return nil, err
+		return nil, nil, nil, err
 	}
 
-	numFields := len(resourceContextFields) + len(schemaBasedFields)
-	declTypes := make([]*apiservercel.DeclType, 0, numFields)
-	varOpts := make([]cel.EnvOption, 0, numFields)
+	appliedEntryType := apiservercel.NewObjectType("AppliedEntry", map[string]*apiservercel.DeclField{
+		"status": apiservercel.NewDeclField("status", apiservercel.DynType, true, nil, nil),
+	})
+	appliedType := apiservercel.NewMapType(
+		decltype.StringTypeWithLimit(limits.MaxKubernetesNameLength),
+		appliedEntryType,
+		limits.MaxAppliedResources,
+	)
 
-	paramType := schemaToTypeOrEmpty(opts.ParametersSchema, "Parameters")
-	declTypes = append(declTypes, paramType)
-	varOpts = append(varOpts, cel.Variable("parameters", paramType.CelType()))
+	return schemautil.BuildCELEnv(schemautil.EnvSpec{
+		BaseEnv: baseEnv,
+		Schemas: []schemautil.NamedSchema{
+			{Name: "parameters", Schema: opts.ParametersSchema, TypeName: "Parameters"},
+			{Name: "environmentConfigs", Schema: opts.EnvironmentConfigsSchema, TypeName: "EnvironmentConfigs"},
+		},
+		ContextFields: resourceContextFields,
+		ExtraRoots: map[string]*apiservercel.DeclType{
+			"applied": appliedType,
+		},
+	})
+}
 
-	envConfigsType := schemaToTypeOrEmpty(opts.EnvironmentConfigsSchema, "EnvironmentConfigs")
-	declTypes = append(declTypes, envConfigsType)
-	varOpts = append(varOpts, cel.Variable("environmentConfigs", envConfigsType.CelType()))
+func buildResourceCELEnv(opts SchemaOptions) (*cel.Env, error) {
+	return BuildResourceCELEnv(opts)
+}
 
-	for _, f := range resourceContextFields {
-		declTypes = append(declTypes, f.DeclType)
-		varOpts = append(varOpts, cel.Variable(f.Name, f.DeclType.CelType()))
-	}
-
-	provider := apiservercel.NewDeclTypeProvider(declTypes...)
-	providerOpts, err := provider.EnvOptions(baseEnv.CELTypeProvider())
-	if err != nil {
-		return nil, err
-	}
-	varOpts = append(varOpts, providerOpts...)
-
-	return baseEnv.Extend(varOpts...)
+// ExtendEnvWithApplied returns a new env with applied in scope as
+// map<string, AppliedEntry>.
+func ExtendEnvWithApplied(env *cel.Env) (*cel.Env, error) {
+	return extendEnvWithApplied(env)
 }
 
 // extendEnvWithApplied returns a new env with applied in scope as
@@ -91,7 +103,7 @@ func extendEnvWithApplied(env *cel.Env) (*cel.Env, error) {
 	})
 
 	// Only the named Object value type goes through the DeclTypeProvider.
-	// The map wrapper is constructed inline at the cel.Type level — registering
+	// The map wrapper is constructed inline at the cel.Type level: registering
 	// a fresh apiservercel.MapType against an env that already carries
 	// map<string, string> (from metadata.labels / metadata.annotations) would
 	// trigger "type map definition differs between CEL environment and type
@@ -111,20 +123,9 @@ func extendEnvWithApplied(env *cel.Env) (*cel.Env, error) {
 
 // createBaseEnv creates the base CEL environment with the standard
 // template extensions (oc_omit and friends). Component-specific helpers
-// (configurations.*, dependencies.*, connections.*) are deliberately absent —
+// (configurations.*, dependencies.*, connections.*) are deliberately absent because
 // those are component-render-time concerns and have no meaning for resource
 // templates.
 func createBaseEnv() (*cel.Env, error) {
 	return cel.NewEnv(template.BaseCELExtensions()...)
-}
-
-// schemaToTypeOrEmpty converts a structural schema to a DeclType, returning
-// an empty object type if the schema is nil or unconvertible.
-func schemaToTypeOrEmpty(schema *apiextschema.Structural, typeName string) *apiservercel.DeclType {
-	if schema != nil {
-		if dt := model.SchemaDeclType(schema, false); dt != nil {
-			return dt.MaybeAssignTypeName(typeName)
-		}
-	}
-	return apiservercel.NewObjectType(typeName, map[string]*apiservercel.DeclField{})
 }

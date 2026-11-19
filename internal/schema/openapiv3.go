@@ -11,6 +11,8 @@ import (
 	apiext "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions"
 	extv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	apiextschema "k8s.io/apiextensions-apiserver/pkg/apiserver/schema"
+
+	"github.com/openchoreo/openchoreo/internal/limits"
 )
 
 // OpenAPIV3ToStructural resolves $refs and converts an openAPIV3Schema to a
@@ -28,11 +30,15 @@ func OpenAPIV3ToStructural(rawSchema map[string]any) (*apiextschema.Structural, 
 	return structural, nil
 }
 
-// OpenAPIV3ToJSONSchema resolves $refs and converts an openAPIV3Schema to
-// v1 JSONSchemaProps for API responses. Note: arbitrary vendor extensions (x-*)
+// OpenAPIV3ToJSONSchema resolves $refs, applies platform default bounds, and converts an
+// openAPIV3Schema to v1 JSONSchemaProps. Note: arbitrary vendor extensions (x-*)
 // are NOT preserved because extv1.JSONSchemaProps does not support them.
 // Use OpenAPIV3ToResolvedSchema for API responses that need vendor extensions.
 func OpenAPIV3ToJSONSchema(rawSchema map[string]any) (*extv1.JSONSchemaProps, error) {
+	return openAPIV3ToJSONSchemaInternal(rawSchema, true)
+}
+
+func openAPIV3ToJSONSchemaInternal(rawSchema map[string]any, applyBounds bool) (*extv1.JSONSchemaProps, error) {
 	resolved, err := ResolveRefs(rawSchema)
 	if err != nil {
 		return nil, fmt.Errorf("failed to resolve $ref: %w", err)
@@ -43,6 +49,9 @@ func OpenAPIV3ToJSONSchema(rawSchema map[string]any) (*extv1.JSONSchemaProps, er
 		return nil, err
 	}
 
+	if applyBounds {
+		ApplyDefaultBoundsToJSONSchema(v1Schema, limits.ActiveSchemaBounds())
+	}
 	sortRequiredFields(v1Schema)
 	return v1Schema, nil
 }
@@ -79,12 +88,13 @@ func OpenAPIV3ToStructuralAndJSONSchema(rawSchema map[string]any) (*apiextschema
 		return nil, nil, fmt.Errorf("failed to build structural schema: %w", err)
 	}
 
-	// For JSON schema: preserve vendor extensions
+	// For JSON schema: preserve vendor extensions and apply platform default bounds
 	v1Schema, err := mapToV1JSONSchema(resolved)
 	if err != nil {
 		return nil, nil, err
 	}
 
+	ApplyDefaultBoundsToJSONSchema(v1Schema, limits.ActiveSchemaBounds())
 	sortRequiredFields(v1Schema)
 	return structural, v1Schema, nil
 }

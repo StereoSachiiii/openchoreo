@@ -17,6 +17,7 @@ import (
 
 	openchoreodevv1alpha1 "github.com/openchoreo/openchoreo/api/v1alpha1"
 	"github.com/openchoreo/openchoreo/internal/validation/component"
+	"github.com/openchoreo/openchoreo/internal/validation/cost"
 	"github.com/openchoreo/openchoreo/internal/validation/schemautil"
 )
 
@@ -26,8 +27,13 @@ var clustertraitlog = logf.Log.WithName("clustertrait-resource")
 
 // SetupClusterTraitWebhookWithManager registers the webhook for ClusterTrait in the manager.
 func SetupClusterTraitWebhookWithManager(mgr ctrl.Manager) error {
+	return SetupClusterTraitWebhookWithManagerAndCostLimit(mgr, 0)
+}
+
+// SetupClusterTraitWebhookWithManagerAndCostLimit registers the webhook with a custom per-expression CEL cost limit.
+func SetupClusterTraitWebhookWithManagerAndCostLimit(mgr ctrl.Manager, celCostLimit uint64) error {
 	return ctrl.NewWebhookManagedBy(mgr, &openchoreodevv1alpha1.ClusterTrait{}).
-		WithCustomValidator(&Validator{}).
+		WithCustomValidator(NewValidator(cost.Mode(""), cost.WithExpressionLimit(celCostLimit))).
 		Complete()
 }
 
@@ -35,12 +41,28 @@ func SetupClusterTraitWebhookWithManager(mgr ctrl.Manager) error {
 
 // Validator validates ClusterTrait resources
 // +kubebuilder:object:generate=false
-type Validator struct{}
+type Validator struct {
+	costChecker *cost.WebhookCostChecker
+}
+
+// NewValidator constructs a Validator wired with the TraitDomainEstimator.
+func NewValidator(mode cost.Mode, opts ...cost.Option) *Validator {
+	return &Validator{
+		costChecker: cost.NewWebhookCostChecker(&component.TraitDomainEstimator{}, mode, opts...),
+	}
+}
+
+func (v *Validator) getCostChecker() *cost.WebhookCostChecker {
+	if v.costChecker != nil {
+		return v.costChecker
+	}
+	return NewValidator("").costChecker
+}
 
 var _ webhook.CustomValidator = &Validator{}
 
 // ValidateCreate implements webhook.CustomValidator so a webhook will be registered for the type ClusterTrait.
-func (v *Validator) ValidateCreate(_ context.Context, obj runtime.Object) (admission.Warnings, error) {
+func (v *Validator) ValidateCreate(ctx context.Context, obj runtime.Object) (admission.Warnings, error) {
 	ct, ok := obj.(*openchoreodevv1alpha1.ClusterTrait)
 	if !ok {
 		return nil, fmt.Errorf("expected a ClusterTrait object but got %T", obj)
@@ -66,11 +88,15 @@ func (v *Validator) ValidateCreate(_ context.Context, obj runtime.Object) (admis
 		return nil, apierrors.NewInvalid(ct.GroupVersionKind().GroupKind(), ct.GetName(), allErrs)
 	}
 
-	return nil, nil
+	// Admission cost analysis via WebhookCostChecker contract
+	return v.getCostChecker().ValidateCreate(ctx, ct, cost.SchemaPair{
+		Parameters:         parametersSchema,
+		EnvironmentConfigs: envConfigsSchema,
+	})
 }
 
 // ValidateUpdate implements webhook.CustomValidator so a webhook will be registered for the type ClusterTrait.
-func (v *Validator) ValidateUpdate(_ context.Context, oldObj, newObj runtime.Object) (admission.Warnings, error) {
+func (v *Validator) ValidateUpdate(ctx context.Context, oldObj, newObj runtime.Object) (admission.Warnings, error) {
 	newClusterTrait, ok := newObj.(*openchoreodevv1alpha1.ClusterTrait)
 	if !ok {
 		return nil, fmt.Errorf("expected a ClusterTrait object for the newObj but got %T", newObj)
@@ -96,7 +122,21 @@ func (v *Validator) ValidateUpdate(_ context.Context, oldObj, newObj runtime.Obj
 		return nil, apierrors.NewInvalid(newClusterTrait.GroupVersionKind().GroupKind(), newClusterTrait.GetName(), allErrs)
 	}
 
-	return nil, nil
+	var oldSchemas cost.SchemaPair
+	if oldCT, ok := oldObj.(*openchoreodevv1alpha1.ClusterTrait); ok {
+		oldSchemas.Parameters, oldSchemas.EnvironmentConfigs = schemautil.ExtractSchemasBestEffort(
+			oldCT.Spec.Parameters, oldCT.Spec.EnvironmentConfigs,
+		)
+	}
+
+	// Admission cost ratchet evaluation via WebhookCostChecker contract
+	return v.getCostChecker().ValidateUpdate(
+		ctx,
+		oldObj,
+		newObj,
+		oldSchemas,
+		cost.SchemaPair{Parameters: parametersSchema, EnvironmentConfigs: envConfigsSchema},
+	)
 }
 
 // ValidateDelete implements webhook.CustomValidator so a webhook will be registered for the type ClusterTrait.

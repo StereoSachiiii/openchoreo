@@ -72,7 +72,7 @@ func Test_fromGoType_SimpleStruct(t *testing.T) {
 	assert.Len(t, fields, 3)
 
 	// Verify field types
-	assert.Equal(t, apiservercel.StringType, fields["name"].Type)
+	assert.Equal(t, StringTypeWithLimit(defaultStringLimit), fields["name"].Type)
 	assert.Equal(t, apiservercel.IntType, fields["count"].Type)
 	assert.Equal(t, apiservercel.BoolType, fields["isEnabled"].Type)
 
@@ -102,7 +102,7 @@ func Test_fromGoType_MapFields(t *testing.T) {
 	assert.True(t, labelsField.Type.IsMap(), "labels should be a map")
 	assert.Equal(t, apiservercel.StringType, labelsField.Type.KeyType)
 	assert.Equal(t, apiservercel.StringType, labelsField.Type.ElemType)
-	assert.Equal(t, int64(maxMapSize), labelsField.Type.MaxElements)
+	assert.Equal(t, maxMapSize, labelsField.Type.MaxElements)
 }
 
 func Test_fromGoType_SliceFields(t *testing.T) {
@@ -114,7 +114,7 @@ func Test_fromGoType_SliceFields(t *testing.T) {
 	commandsField := fields["commands"]
 	assert.True(t, commandsField.Type.IsList(), "commands should be a list")
 	assert.Equal(t, apiservercel.StringType, commandsField.Type.ElemType)
-	assert.Equal(t, int64(maxListSize), commandsField.Type.MaxElements)
+	assert.Equal(t, maxListSize, commandsField.Type.MaxElements)
 }
 
 func Test_fromGoType_NestedStruct(t *testing.T) {
@@ -226,7 +226,7 @@ func Test_fromGoType_SliceTypes(t *testing.T) {
 			declType := fromGoType(tt.goType)
 			assert.True(t, declType.IsList(), "should be a list")
 			assert.Equal(t, tt.expectedElem, declType.ElemType)
-			assert.Equal(t, int64(maxListSize), declType.MaxElements)
+			assert.Equal(t, maxListSize, declType.MaxElements)
 		})
 	}
 }
@@ -249,7 +249,7 @@ func Test_fromGoType_MapTypes(t *testing.T) {
 			assert.True(t, declType.IsMap(), "should be a map")
 			assert.Equal(t, tt.expectedKey, declType.KeyType)
 			assert.Equal(t, tt.expectedElem, declType.ElemType)
-			assert.Equal(t, int64(maxMapSize), declType.MaxElements)
+			assert.Equal(t, maxMapSize, declType.MaxElements)
 		})
 	}
 }

@@ -69,6 +69,7 @@ spec:
             - Never
         imagePullSecrets:
           type: array
+          maxItems: 16
           items:
             type: string
           default: []

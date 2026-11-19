@@ -1,6 +1,7 @@
 // Copyright 2025 The OpenChoreo Authors
 // SPDX-License-Identifier: Apache-2.0
 
+// Package component provides CEL validation and cost estimation for ComponentType, Trait, and related templates.
 package component
 
 import (
@@ -27,6 +28,7 @@ const (
 type CELValidator struct {
 	baseEnv      *cel.Env
 	typeProvider *apiservercel.DeclTypeProvider
+	rootTypes    map[string]*apiservercel.DeclType
 }
 
 // NewCELValidator creates a validator for the specified resource type.
@@ -34,29 +36,21 @@ type CELValidator struct {
 // to enforce proper variable access (e.g., traits have access to trait context variable).
 // Provides schema-aware type checking when schemas are provided in opts.
 func NewCELValidator(resourceType ResourceType, opts SchemaOptions) (*CELValidator, error) {
-	var env *cel.Env
-	var provider *apiservercel.DeclTypeProvider
-	var err error
-
 	switch resourceType {
 	case ComponentTypeResource:
-		env, provider, err = buildComponentCELEnv(opts)
+		return buildComponentValidator(opts)
 	case TraitResource:
-		env, provider, err = buildTraitCELEnv(opts)
+		return buildTraitValidator(opts)
 	case EndpointTypeResource:
-		env, provider, err = buildEndpointCELEnv(opts)
+		return buildEndpointValidator(opts)
 	default:
 		return nil, fmt.Errorf("unknown resource type: %v", resourceType)
 	}
+}
 
-	if err != nil {
-		return nil, fmt.Errorf("failed to create CEL environment: %w", err)
-	}
-
-	return &CELValidator{
-		baseEnv:      env,
-		typeProvider: provider,
-	}, nil
+// GetRootTypes returns the root DeclTypes for cost estimation.
+func (v *CELValidator) GetRootTypes() map[string]*apiservercel.DeclType {
+	return v.rootTypes
 }
 
 // ValidateExpression validates a CEL expression with the base environment
@@ -64,8 +58,7 @@ func (v *CELValidator) ValidateExpression(expr string) error {
 	return v.ValidateWithEnv(expr, v.baseEnv)
 }
 
-// ValidateWithEnv validates a CEL expression with a specific environment.
-// This is used when the environment has been extended with forEach variables.
+// ValidateWithEnv parses and type-checks a CEL expression against the given environment.
 func (v *CELValidator) ValidateWithEnv(expr string, env *cel.Env) error {
 	parsed, issues := env.Parse(expr)
 	if issues != nil && issues.Err() != nil {
@@ -133,4 +126,17 @@ func (v *CELValidator) GetBaseEnv() *cel.Env {
 // Used by forEach analysis to resolve map value types for field validation.
 func (v *CELValidator) GetTypeProvider() *apiservercel.DeclTypeProvider {
 	return v.typeProvider
+}
+
+// ResourceEnvironment returns the CEL environment for a specific resource,
+// extending the base environment with loop variables when forEach is configured.
+func (v *CELValidator) ResourceEnvironment(forEachExpr string, varName string) (*cel.Env, error) {
+	env, _, err := v.ResourceEnvironmentWithDeclType(forEachExpr, varName)
+	return env, err
+}
+
+// ResourceEnvironmentWithDeclType returns the CEL environment and the loop variable's DeclType (if any)
+// for a specific resource, extending the base environment with loop variables when forEach is configured.
+func (v *CELValidator) ResourceEnvironmentWithDeclType(forEachExpr string, varName string) (*cel.Env, *apiservercel.DeclType, error) {
+	return extendForEachEnv(v.baseEnv, v.typeProvider, forEachExpr, varName)
 }

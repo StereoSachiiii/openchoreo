@@ -296,19 +296,25 @@ func unmarshalRaw(raw *runtime.RawExtension) (map[string]any, error) {
 	return out, nil
 }
 
-// applySchemaDefaults overlays schema defaults onto target.
+// applySchemaDefaults overlays schema defaults onto target and validates against the schema.
 func applySchemaDefaults(target map[string]any, section *v1alpha1.SchemaSection) (map[string]any, error) {
 	if target == nil {
 		target = map[string]any{}
 	}
-	structural, err := schema.ResolveSectionToStructural(section)
+	structural, jsonSchema, err := schema.ResolveSectionToBundle(section)
 	if err != nil {
 		return nil, err
 	}
 	if structural == nil {
 		return target, nil
 	}
-	return schema.ApplyDefaults(target, structural), nil
+	defaulted := schema.ApplyDefaults(target, structural)
+	if jsonSchema != nil {
+		if err := schema.ValidateWithJSONSchema(defaulted, jsonSchema); err != nil {
+			return nil, fmt.Errorf("parameters validation failed: %w", err)
+		}
+	}
+	return defaulted, nil
 }
 
 // structToMap converts typed Go structs to map[string]any for CEL evaluation

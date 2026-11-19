@@ -111,7 +111,6 @@ func (v *Validator) ValidateCreate(ctx context.Context, obj runtime.Object) (adm
 	// Note: Required field validations (owner, environment) are enforced by the CRD schema
 	// Note: spec.environment, spec.owner immutability is enforced by CEL rules in the CRD schema
 	// Note: Cross-resource validation (ComponentRelease, schema validation) is handled by the controller
-
 	return nil, nil
 }
 
@@ -120,7 +119,6 @@ func (v *Validator) ValidateUpdate(ctx context.Context, oldObj, newObj runtime.O
 	// Note: Required field validations (owner, environment) are enforced by the CRD schema
 	// Note: spec.environment, spec.owner immutability is enforced by CEL rules in the CRD schema
 	// Note: Cross-resource validation (ComponentRelease, schema validation) is handled by the controller
-
 	return nil, nil
 }
 

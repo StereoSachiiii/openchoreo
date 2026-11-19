@@ -473,22 +473,25 @@ func withApplied(base map[string]any, observed map[string]map[string]any) map[st
 	return ctx
 }
 
-// applySchemaDefaults overlays schema defaults onto target. Returns target
-// unchanged when the section is nil/empty (no schema to consult). Resolves
-// the structural schema once per call; callers are expected to be in the
-// hot path of a single render.
+// applySchemaDefaults overlays schema defaults onto target and validates against the schema.
 func applySchemaDefaults(target map[string]any, section *v1alpha1.SchemaSection) (map[string]any, error) {
 	if target == nil {
 		target = map[string]any{}
 	}
-	structural, err := schema.ResolveSectionToStructural(section)
+	structural, jsonSchema, err := schema.ResolveSectionToBundle(section)
 	if err != nil {
 		return nil, err
 	}
 	if structural == nil {
 		return target, nil
 	}
-	return schema.ApplyDefaults(target, structural), nil
+	defaulted := schema.ApplyDefaults(target, structural)
+	if jsonSchema != nil {
+		if err := schema.ValidateWithJSONSchema(defaulted, jsonSchema); err != nil {
+			return nil, fmt.Errorf("parameters validation failed: %w", err)
+		}
+	}
+	return defaulted, nil
 }
 
 // structToMap converts typed Go structs to map[string]any for CEL evaluation

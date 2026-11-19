@@ -10,6 +10,8 @@ import (
 	"sync"
 
 	"github.com/google/cel-go/cel"
+
+	"github.com/openchoreo/openchoreo/internal/limits"
 )
 
 // EngineOption configures the template engine.
@@ -58,7 +60,7 @@ const (
 	// The control-plane chart states this same number as its celCostLimit default rather
 	// than leaving it at 0, so the two have to be changed together: a chart that pins the
 	// old value would otherwise keep overriding a new default here.
-	defaultCELCostLimit     uint64 = 2_000_000
+	defaultCELCostLimit     uint64 = limits.DefaultCELCostLimit
 	interruptCheckFrequency uint   = 100 // internal; how often ContextEval checks ctx. Not user-configurable.
 )
 

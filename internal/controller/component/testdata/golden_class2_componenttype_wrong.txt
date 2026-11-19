@@ -1,0 +1,3 @@
+Failed to handle autoDeploy: the ComponentType "web-service" can't be used as written:
+  • spec.componentType.spec.parameters: failed to parse OpenAPI v3 schema: invalid regex pattern in 'regex' property
+To fix: your parameters are not the cause. Ask your platform team to correct the ComponentType.

@@ -32,6 +32,10 @@ const (
 	// ClusterResourceType does not exist in the cluster yet.
 	ReasonResourceTypeNotFound controller.ConditionReason = "ResourceTypeNotFound"
 
+	// ReasonReleaseAdmissionFailed indicates the ResourceRelease creation was
+	// rejected by admission validation (e.g. invalid parameters against schema).
+	ReasonReleaseAdmissionFailed controller.ConditionReason = "ReleaseAdmissionFailed"
+
 	// ReasonFinalizing indicates the Resource is being finalized.
 	ReasonFinalizing controller.ConditionReason = "Finalizing"
 )

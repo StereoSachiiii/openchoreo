@@ -12,6 +12,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 
 	openchoreodevv1alpha1 "github.com/openchoreo/openchoreo/api/v1alpha1"
+	"github.com/openchoreo/openchoreo/internal/validation/cost"
 )
 
 // validTemplate returns a minimal RawExtension for a ConfigMap manifest.
@@ -128,6 +129,45 @@ var _ = Describe("ClusterResourceType Webhook", func() {
 		It("returns an error for non-ClusterResourceType objects", func() {
 			_, err := validator.ValidateDelete(ctx, &openchoreodevv1alpha1.ResourceType{})
 			Expect(err).To(HaveOccurred())
+		})
+	})
+
+	Context("CEL Cost Enforcement", func() {
+		overbudgetCRT := func() *openchoreodevv1alpha1.ClusterResourceType {
+			return &openchoreodevv1alpha1.ClusterResourceType{
+				Spec: openchoreodevv1alpha1.ClusterResourceTypeSpec{
+					Parameters: &openchoreodevv1alpha1.SchemaSection{
+						OpenAPIV3Schema: &runtime.RawExtension{
+							Raw: []byte(`{"type":"object","properties":{"tags":{"type":"array","maxItems":60,"items":{"type":"string"}}}}`),
+						},
+					},
+					Resources: []openchoreodevv1alpha1.ResourceTypeManifest{
+						{ID: "claim", Template: validTemplate()},
+					},
+					Outputs: []openchoreodevv1alpha1.ResourceTypeOutput{
+						{
+							Name:  "computed",
+							Value: "${parameters.tags.map(a, parameters.tags.map(b, parameters.tags.map(c, a + b + c))).size()}",
+						},
+					},
+				},
+			}
+		}
+
+		It("enforce mode rejects an over-budget ClusterResourceType on create", func() {
+			enforceVal := NewValidator(cost.ModeEnforce)
+			warnings, err := enforceVal.ValidateCreate(ctx, overbudgetCRT())
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("CEL cost verdict: OVER BUDGET"))
+			Expect(warnings).To(BeEmpty())
+		})
+
+		It("warn mode admits an over-budget ClusterResourceType with admission warnings", func() {
+			warnVal := NewValidator(cost.ModeWarn)
+			warnings, err := warnVal.ValidateCreate(ctx, overbudgetCRT())
+			Expect(err).NotTo(HaveOccurred())
+			Expect(warnings).To(HaveLen(1))
+			Expect(warnings[0]).To(ContainSubstring("CEL cost verdict: OVER BUDGET"))
 		})
 	})
 })

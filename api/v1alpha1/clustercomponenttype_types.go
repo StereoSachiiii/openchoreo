@@ -22,6 +22,7 @@ type ClusterComponentTypeSpec struct {
 	// for building components of this type. If empty, no workflows are allowed.
 	// References must point to ClusterWorkflow resources.
 	// +optional
+	// +kubebuilder:validation:MaxItems=100
 	AllowedWorkflows []ClusterWorkflowRef `json:"allowedWorkflows,omitempty"`
 
 	// Parameters defines what developers can configure when creating components of this type.
@@ -38,6 +39,7 @@ type ClusterComponentTypeSpec struct {
 	// referencing the ComponentType schema (e.g., "${parameters.storage.mountPath}").
 	// These traits are automatically applied to all Components of this type.
 	// +optional
+	// +kubebuilder:validation:MaxItems=100
 	Traits []ClusterComponentTypeTrait `json:"traits,omitempty"`
 
 	// AllowedTraits restricts which ClusterTrait CRs developers can attach to Components of this type.
@@ -45,6 +47,7 @@ type ClusterComponentTypeSpec struct {
 	// ClusterTrait references listed here must not overlap with traits already embedded in spec.traits.
 	// If empty or omitted, no additional component-level traits are allowed.
 	// +optional
+	// +kubebuilder:validation:MaxItems=100
 	AllowedTraits []ClusterTraitRef `json:"allowedTraits,omitempty"`
 
 	// AllowedEndpoints declares which ClusterEndpointType may expose a workload
@@ -63,17 +66,20 @@ type ClusterComponentTypeSpec struct {
 	// Deprecated: use PreRenderValidations. Retained for backward compatibility;
 	// it is mutually exclusive with PreRenderValidations and has identical semantics.
 	// +optional
+	// +kubebuilder:validation:MaxItems=100
 	Validations []ValidationRule `json:"validations,omitempty"`
 
 	// PreRenderValidations are CEL-based rules evaluated before rendering, against the
 	// component context (parameters/environmentConfigs/workload/metadata). All rules must
 	// evaluate to true for rendering to proceed. Replaces Validations.
 	// +optional
+	// +kubebuilder:validation:MaxItems=100
 	PreRenderValidations []ValidationRule `json:"preRenderValidations,omitempty"`
 
 	// PostRenderValidations are CEL-based rules evaluated after all traits are applied,
 	// against the final rendered Kubernetes resources.
 	// +optional
+	// +kubebuilder:validation:MaxItems=100
 	PostRenderValidations []PostRenderValidation `json:"postRenderValidations,omitempty"`
 
 	// Resources are templates that generate Kubernetes resources dynamically.
@@ -81,6 +87,7 @@ type ClusterComponentTypeSpec struct {
 	// one resource must have an id matching the workloadType. When workloadType
 	// is "proxy", a matching resource id is not required.
 	// +kubebuilder:validation:MinItems=1
+	// +kubebuilder:validation:MaxItems=100
 	Resources []ResourceTemplate `json:"resources"`
 }
 

@@ -130,6 +130,7 @@ spec:
                   x-kubernetes-validations:
                   - message: var is required when forEach is specified
                     rule: '!has(self.forEach) || has(self.var)'
+                maxItems: 100
                 minItems: 1
                 type: array
                 x-kubernetes-list-map-keys:
@@ -158,6 +159,7 @@ spec:
                   - message
                   - rule
                   type: object
+                maxItems: 100
                 type: array
             required:
             - resources

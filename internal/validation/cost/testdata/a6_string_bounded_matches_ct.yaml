@@ -1,0 +1,26 @@
+// Scenario: A6_ComponentType_Bounded - String with maxLength 63 inside matches()
+// Invariant: Bounded string (maxLength: 63) sizes regex cost conservatively under budget.
+// Expected result: Admitted.
+apiVersion: openchoreo.dev/v1alpha1
+kind: ComponentType
+metadata:
+  name: a6-string-bounded-matches
+  namespace: default
+spec:
+  workloadType: deployment
+  parameters:
+    openAPIV3Schema:
+      type: object
+      properties:
+        domain:
+          type: string
+          maxLength: 63
+  resources:
+    - id: deployment
+      template:
+        apiVersion: apps/v1
+        kind: Deployment
+        metadata:
+          name: test-app
+        spec:
+          replicas: "${parameters.domain.matches('^[a-z0-9]+$') ? 1 : 0}"

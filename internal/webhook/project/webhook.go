@@ -80,6 +80,8 @@ func (v *Validator) ValidateCreate(ctx context.Context, obj runtime.Object) (adm
 	}
 	projectlog.Info("Validation for Project upon creation", "name", project.GetName())
 
+	// No-op: Project parameter bounds are validated against ProjectType schemas downstream
+
 	return nil, nil
 }
 
@@ -90,6 +92,8 @@ func (v *Validator) ValidateUpdate(ctx context.Context, oldObj, newObj runtime.O
 		return nil, fmt.Errorf("expected a Project object for the newObj but got %T", newObj)
 	}
 	projectlog.Info("Validation for Project upon update", "name", project.GetName())
+
+	// No-op: Project parameter bounds are validated against ProjectType schemas downstream
 
 	return nil, nil
 }

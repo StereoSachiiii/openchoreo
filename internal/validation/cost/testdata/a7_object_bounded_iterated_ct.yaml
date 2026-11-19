@@ -1,0 +1,26 @@
+// Scenario: A7_ComponentType_Bounded - Object with maxProperties: 20, expression iterating keys
+// Invariant: Explicit maxProperties limits assumed size to 20 keys, remaining under budget.
+// Expected result: Admitted.
+apiVersion: openchoreo.dev/v1alpha1
+kind: ComponentType
+metadata:
+  name: a7-object-bounded-iterated
+  namespace: default
+spec:
+  workloadType: deployment
+  parameters:
+    openAPIV3Schema:
+      type: object
+      properties:
+        metadataMap:
+          type: object
+          maxProperties: 20
+  resources:
+    - id: deployment
+      template:
+        apiVersion: apps/v1
+        kind: Deployment
+        metadata:
+          name: test-app
+        spec:
+          replicas: "${parameters.metadataMap.all(k, true) ? 1 : 0}"

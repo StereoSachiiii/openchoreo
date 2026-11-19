@@ -21,21 +21,12 @@ import (
 	"github.com/google/cel-go/parser"
 
 	"github.com/openchoreo/openchoreo/internal/dataplane/kubernetes"
+	"github.com/openchoreo/openchoreo/internal/limits"
 )
 
 // maxListsRangeSize bounds lists.range so a single call cannot materialize more than
-// ~maxListsRangeSize x 24B of slice memory. Set to 10_000 because cel-go's cost model is
-// a poor proxy for CPU once a list grows past ~10k elements: a measured
-// lists.range(10000).map(...) costs 150k and runs in 85ms, while the same expression at
-// 100k costs 1.5M and runs in 6.4s — 10x the cost for 75x the time. No sample uses
-// lists.range, so the tightening costs nothing in practice.
-//
-// This closes one route to a huge list, not all of them: split() on a large
-// tenant-supplied string is another, and is unaffected by this cap
-// (v.split(",").map(...) over an 800KB value burns ~9.7s before the cost limit fires).
-// The per-expression cost limit therefore bounds memory, not wall-clock. The controls for
-// the residual routes are the cumulative reconcile budget and the opt-in render timeout.
-const maxListsRangeSize int64 = 10_000
+// ~maxListsRangeSize x 24B of slice memory.
+const maxListsRangeSize int64 = limits.MaxListsRangeSize
 
 // BaseCELExtensions returns the CEL extensions used across OpenChoreo.
 // This includes optional types, common utility extensions for strings, encoding,
@@ -569,6 +560,11 @@ func (customFunctionCostEstimator) CallCost(function, _ string, args []ref.Val, 
 	}
 
 	return &cost
+}
+
+// CustomFunctionCostEstimator returns the runtime ActualCostEstimator for custom oc_* functions.
+func CustomFunctionCostEstimator() interpreter.ActualCostEstimator {
+	return customFunctionCostEstimator{}
 }
 
 // CustomFunctionCostOptions returns the program options that install the estimator.

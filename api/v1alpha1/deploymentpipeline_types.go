@@ -28,6 +28,7 @@ type PromotionPath struct {
 	// SourceEnvironmentRef is the reference to the source environment
 	SourceEnvironmentRef EnvironmentRef `json:"sourceEnvironmentRef"`
 	// TargetEnvironmentRefs is the list of target environments
+	// +kubebuilder:validation:MaxItems=50
 	TargetEnvironmentRefs []TargetEnvironmentRef `json:"targetEnvironmentRefs"`
 }
 
@@ -37,6 +38,8 @@ type DeploymentPipelineSpec struct {
 	// Important: Run "make" to regenerate code after modifying this file
 
 	// PromotionPaths defines the available paths for promotion between environments
+	// +optional
+	// +kubebuilder:validation:MaxItems=50
 	PromotionPaths []PromotionPath `json:"promotionPaths,omitempty"`
 }
 

@@ -12,6 +12,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 
 	openchoreodevv1alpha1 "github.com/openchoreo/openchoreo/api/v1alpha1"
+	"github.com/openchoreo/openchoreo/internal/limits"
 )
 
 const workloadTypeDeployment = "deployment"
@@ -779,6 +780,29 @@ var _ = Describe("ClusterComponentType Webhook", func() {
 			err := k8sClient.Create(ctx, cct)
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("only one of"))
+		})
+		It("emits default bounds warning when schema omits bounds", func() {
+			limits.SetActiveSchemaBounds(limits.OptInSchemaBounds())
+			defer limits.SetActiveSchemaBounds(limits.DefaultSchemaBounds())
+
+			cct := &openchoreodevv1alpha1.ClusterComponentType{
+				ObjectMeta: metav1.ObjectMeta{Name: "unbounded-cct"},
+				Spec: openchoreodevv1alpha1.ClusterComponentTypeSpec{
+					WorkloadType: workloadTypeDeployment,
+					Resources: []openchoreodevv1alpha1.ResourceTemplate{
+						{ID: workloadTypeDeployment, Template: validDeploymentTemplate()},
+					},
+					Parameters: &openchoreodevv1alpha1.SchemaSection{
+						OpenAPIV3Schema: &runtime.RawExtension{
+							Raw: []byte(`{"type":"object","properties":{"tags":{"type":"array","items":{"type":"string"}}}}`),
+						},
+					},
+				},
+			}
+			warnings, err := validator.ValidateCreate(ctx, cct)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(warnings).NotTo(BeEmpty())
+			Expect(warnings).To(ContainElement(ContainSubstring("spec.parameters.properties.tags: no maxItems declared; platform default maxItems=1000 is enforced on inputs")))
 		})
 	})
 })

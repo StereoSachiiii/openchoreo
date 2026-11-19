@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 
+	apiextschema "k8s.io/apiextensions-apiserver/pkg/apiserver/schema"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/validation/field"
@@ -17,6 +18,7 @@ import (
 
 	openchoreodevv1alpha1 "github.com/openchoreo/openchoreo/api/v1alpha1"
 	"github.com/openchoreo/openchoreo/internal/validation/component"
+	"github.com/openchoreo/openchoreo/internal/validation/cost"
 	"github.com/openchoreo/openchoreo/internal/validation/schemautil"
 )
 
@@ -26,8 +28,13 @@ var componenttypelog = logf.Log.WithName("componenttype-resource")
 
 // SetupComponentTypeWebhookWithManager registers the webhook for ComponentType in the manager.
 func SetupComponentTypeWebhookWithManager(mgr ctrl.Manager) error {
+	return SetupComponentTypeWebhookWithManagerAndCostLimit(mgr, 0)
+}
+
+// SetupComponentTypeWebhookWithManagerAndCostLimit registers the webhook with a custom per-expression CEL cost limit.
+func SetupComponentTypeWebhookWithManagerAndCostLimit(mgr ctrl.Manager, celCostLimit uint64) error {
 	return ctrl.NewWebhookManagedBy(mgr, &openchoreodevv1alpha1.ComponentType{}).
-		WithCustomValidator(&Validator{}).
+		WithCustomValidator(NewValidator(cost.Mode(""), cost.WithExpressionLimit(celCostLimit))).
 		Complete()
 }
 
@@ -35,30 +42,50 @@ func SetupComponentTypeWebhookWithManager(mgr ctrl.Manager) error {
 
 // Validator validates ComponentType resources
 // +kubebuilder:object:generate=false
-type Validator struct{}
+type Validator struct {
+	costChecker *cost.WebhookCostChecker
+}
+
+// NewValidator constructs a Validator wired with the ComponentDomainEstimator.
+func NewValidator(mode cost.Mode, opts ...cost.Option) *Validator {
+	return &Validator{
+		costChecker: cost.NewWebhookCostChecker(&component.ComponentDomainEstimator{}, mode, opts...),
+	}
+}
+
+func (v *Validator) getCostChecker() *cost.WebhookCostChecker {
+	if v.costChecker != nil {
+		return v.costChecker
+	}
+	return NewValidator("").costChecker
+}
 
 var _ webhook.CustomValidator = &Validator{}
 
 // ValidateCreate implements webhook.CustomValidator so a webhook will be registered for the type ComponentType.
-func (v *Validator) ValidateCreate(_ context.Context, obj runtime.Object) (admission.Warnings, error) {
+func (v *Validator) ValidateCreate(ctx context.Context, obj runtime.Object) (admission.Warnings, error) {
 	componenttype, ok := obj.(*openchoreodevv1alpha1.ComponentType)
 	if !ok {
 		return nil, fmt.Errorf("expected a ComponentType object but got %T", obj)
 	}
 	componenttypelog.Info("Validation for ComponentType upon creation", "name", componenttype.GetName())
 
-	allErrs := validateComponentType(componenttype)
+	parametersSchema, envConfigsSchema, allErrs := validateComponentType(componenttype)
 
 	if len(allErrs) > 0 {
 		return nil, apierrors.NewInvalid(componenttype.GroupVersionKind().GroupKind(), componenttype.GetName(), allErrs)
 	}
 
-	return nil, nil
+	// Admission cost analysis via WebhookCostChecker contract
+	return v.getCostChecker().ValidateCreate(ctx, componenttype, cost.SchemaPair{
+		Parameters:         parametersSchema,
+		EnvironmentConfigs: envConfigsSchema,
+	})
 }
 
 // ValidateUpdate implements webhook.CustomValidator so a webhook will be registered for the type ComponentType.
-func (v *Validator) ValidateUpdate(_ context.Context, oldObj, newObj runtime.Object) (admission.Warnings, error) {
-	_, ok := oldObj.(*openchoreodevv1alpha1.ComponentType)
+func (v *Validator) ValidateUpdate(ctx context.Context, oldObj, newObj runtime.Object) (admission.Warnings, error) {
+	oldComponentType, ok := oldObj.(*openchoreodevv1alpha1.ComponentType)
 	if !ok {
 		return nil, fmt.Errorf("expected a ComponentType object for the oldObj but got %T", oldObj)
 	}
@@ -71,13 +98,24 @@ func (v *Validator) ValidateUpdate(_ context.Context, oldObj, newObj runtime.Obj
 
 	// Note: spec.workloadType immutability is enforced by CEL rules in the CRD schema
 
-	allErrs := validateComponentType(newComponentType)
+	parametersSchema, envConfigsSchema, allErrs := validateComponentType(newComponentType)
 
 	if len(allErrs) > 0 {
 		return nil, apierrors.NewInvalid(newComponentType.GroupVersionKind().GroupKind(), newComponentType.GetName(), allErrs)
 	}
 
-	return nil, nil
+	oldParamSchema, oldEnvSchema := schemautil.ExtractSchemasBestEffort(
+		oldComponentType.Spec.Parameters, oldComponentType.Spec.EnvironmentConfigs,
+	)
+
+	// Admission cost ratchet evaluation via WebhookCostChecker contract
+	return v.getCostChecker().ValidateUpdate(
+		ctx,
+		oldComponentType,
+		newComponentType,
+		cost.SchemaPair{Parameters: oldParamSchema, EnvironmentConfigs: oldEnvSchema},
+		cost.SchemaPair{Parameters: parametersSchema, EnvironmentConfigs: envConfigsSchema},
+	)
 }
 
 // ValidateDelete implements webhook.CustomValidator so a webhook will be registered for the type ComponentType.
@@ -93,7 +131,7 @@ func (v *Validator) ValidateDelete(ctx context.Context, obj runtime.Object) (adm
 }
 
 // validateComponentType performs all validation for a ComponentType.
-func validateComponentType(ct *openchoreodevv1alpha1.ComponentType) field.ErrorList {
+func validateComponentType(ct *openchoreodevv1alpha1.ComponentType) (*apiextschema.Structural, *apiextschema.Structural, field.ErrorList) {
 	allErrs := field.ErrorList{}
 
 	// Extract and validate schemas, getting structural schemas for CEL validation
@@ -128,7 +166,7 @@ func validateComponentType(ct *openchoreodevv1alpha1.ComponentType) field.ErrorL
 		ct.Spec.AllowedEndpoints, field.NewPath("spec", "allowedEndpoints"),
 	)...)
 
-	return allErrs
+	return parametersSchema, envConfigsSchema, allErrs
 }
 
 // validateResourceStructure validates resource templates and ensures workloadType matches a resource kind

@@ -1,0 +1,25 @@
+// Scenario: A6_ComponentType_Unbounded - String with no maxLength inside matches()
+// Invariant: Unbounded string inside matches() uses DefaultMaxLength = 3,145,726 (~3 MiB), exceeding 2,000,000 budget.
+// Expected result: Rejected for cost.
+apiVersion: openchoreo.dev/v1alpha1
+kind: ComponentType
+metadata:
+  name: a6-string-unbounded-matches
+  namespace: default
+spec:
+  workloadType: deployment
+  parameters:
+    openAPIV3Schema:
+      type: object
+      properties:
+        domain:
+          type: string
+  resources:
+    - id: deployment
+      template:
+        apiVersion: apps/v1
+        kind: Deployment
+        metadata:
+          name: test-app
+        spec:
+          replicas: "${parameters.domain.matches('^[a-z0-9]+$') ? 1 : 0}"

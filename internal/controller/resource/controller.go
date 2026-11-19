@@ -99,6 +99,11 @@ func (r *Reconciler) reconcile(ctx context.Context, old, res *openchoreov1alpha1
 	if res.Status.LatestRelease == nil || res.Status.LatestRelease.Hash != releaseHash {
 		rrName := fmt.Sprintf("%s-%s", res.Name, releaseHash)
 		if err := r.ensureResourceRelease(ctx, res, snapshot, rrName); err != nil {
+			if apierrors.IsInvalid(err) {
+				controller.MarkFalseCondition(res, ConditionReady, ReasonReleaseAdmissionFailed,
+					fmt.Sprintf("ResourceRelease admission failed: %v", err))
+				return ctrl.Result{}, nil
+			}
 			return ctrl.Result{}, err
 		}
 		res.Status.LatestRelease = &openchoreov1alpha1.LatestResourceRelease{

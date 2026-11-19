@@ -139,6 +139,7 @@ spec:
                   - instanceName
                   - name
                   type: object
+                maxItems: 100
                 type: array
               workflow:
                 description: |-

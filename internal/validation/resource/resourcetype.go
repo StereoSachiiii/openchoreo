@@ -13,6 +13,7 @@ import (
 	"github.com/google/cel-go/cel"
 	celast "github.com/google/cel-go/common/ast"
 	"github.com/google/cel-go/common/operators"
+	apiextschema "k8s.io/apiextensions-apiserver/pkg/apiserver/schema"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/validation/field"
 
@@ -24,7 +25,7 @@ import (
 
 // celWrapPattern matches a single ${...}-wrapped CEL expression. The CRD
 // schema enforces this pattern on IncludeWhen and ReadyWhen, so the inner
-// extraction here is defensive — a non-matching value indicates the CRD layer
+// extraction here is defensive: a non-matching value indicates the CRD layer
 // failed and we should surface a clean error instead of crashing.
 var celWrapPattern = regexp.MustCompile(`^\$\{([\s\S]+)\}\s*$`)
 
@@ -43,8 +44,14 @@ var celWrapPattern = regexp.MustCompile(`^\$\{([\s\S]+)\}\s*$`)
 //     configMapKeyRef.{name,key}) compiles against env-with-applied with the
 //     same applied.<id> declaration check.
 func ValidateResourceTypeSpec(spec *v1alpha1.ResourceTypeSpec, basePath *field.Path) field.ErrorList {
+	_, _, errs := ValidateResourceTypeSpecWithSchemas(spec, basePath)
+	return errs
+}
+
+// ValidateResourceTypeSpecWithSchemas validates a ResourceTypeSpec and returns the extracted structural schemas.
+func ValidateResourceTypeSpecWithSchemas(spec *v1alpha1.ResourceTypeSpec, basePath *field.Path) (*apiextschema.Structural, *apiextschema.Structural, field.ErrorList) {
 	if spec == nil {
-		return nil
+		return nil, nil, nil
 	}
 	return validateResourceTypeSpecCommon(
 		spec.Parameters,
@@ -60,8 +67,14 @@ func ValidateResourceTypeSpec(spec *v1alpha1.ResourceTypeSpec, basePath *field.P
 // the shared inner function so future divergence (e.g. cluster-only fields)
 // has a single place to extend.
 func ValidateClusterResourceTypeSpec(spec *v1alpha1.ClusterResourceTypeSpec, basePath *field.Path) field.ErrorList {
+	_, _, errs := ValidateClusterResourceTypeSpecWithSchemas(spec, basePath)
+	return errs
+}
+
+// ValidateClusterResourceTypeSpecWithSchemas validates a ClusterResourceTypeSpec and returns the extracted structural schemas.
+func ValidateClusterResourceTypeSpecWithSchemas(spec *v1alpha1.ClusterResourceTypeSpec, basePath *field.Path) (*apiextschema.Structural, *apiextschema.Structural, field.ErrorList) {
 	if spec == nil {
-		return nil
+		return nil, nil, nil
 	}
 	return validateResourceTypeSpecCommon(
 		spec.Parameters,
@@ -78,7 +91,7 @@ func validateResourceTypeSpecCommon(
 	resources []v1alpha1.ResourceTypeManifest,
 	outputs []v1alpha1.ResourceTypeOutput,
 	basePath *field.Path,
-) field.ErrorList {
+) (*apiextschema.Structural, *apiextschema.Structural, field.ErrorList) {
 	var allErrs field.ErrorList
 
 	parametersSchema, envConfigsSchema, schemaErrs := schemautil.ExtractAndValidateSchemas(
@@ -91,12 +104,12 @@ func validateResourceTypeSpecCommon(
 		EnvironmentConfigsSchema: envConfigsSchema,
 	})
 	if err != nil {
-		return append(allErrs, field.InternalError(basePath, fmt.Errorf("build CEL env: %w", err)))
+		return parametersSchema, envConfigsSchema, append(allErrs, field.InternalError(basePath, fmt.Errorf("build CEL env: %w", err)))
 	}
 
 	appliedEnv, err := extendEnvWithApplied(baseEnv)
 	if err != nil {
-		return append(allErrs, field.InternalError(basePath, fmt.Errorf("extend CEL env with applied: %w", err)))
+		return parametersSchema, envConfigsSchema, append(allErrs, field.InternalError(basePath, fmt.Errorf("extend CEL env with applied: %w", err)))
 	}
 
 	declaredIDs := make(map[string]bool, len(resources))
@@ -124,7 +137,7 @@ func validateResourceTypeSpecCommon(
 		}
 	}
 
-	return allErrs
+	return parametersSchema, envConfigsSchema, allErrs
 }
 
 // ValidateLocalDevAddressesAnnotation checks that the annotation on a
@@ -295,7 +308,7 @@ func validateBoolCELField(
 // (e.g. interpolated names like "${metadata.resourceName}-conn").
 //
 // declaredIDs governs whether applied.<id> references match a declared
-// resources[].id. The env is expected to be the env-with-applied — callers
+// resources[].id. The env is expected to be the env-with-applied; callers
 // pass baseEnv when applied.* should be rejected outright.
 func validateCELString(
 	value string,
@@ -393,7 +406,7 @@ func walkAndValidateCEL(
 // applied.<ident> (SelectKind) and applied["<lit>"] (CallKind with the index
 // operator) are recognized.
 //
-// fieldValue and pathValue are used only for error wrapping — they describe
+// fieldValue and pathValue are used only for error wrapping: they describe
 // the source field to the caller.
 func validateAppliedReferences(
 	expr celast.Expr,
@@ -433,7 +446,7 @@ func validateAppliedReferences(
 				return
 			}
 			if key.Kind() != celast.LiteralKind {
-				// applied[someVar] — can't validate at compile time; skip.
+				// applied[someVar]: cannot validate at compile time, so skip.
 				return
 			}
 			lit, ok := key.AsLiteral().Value().(string)

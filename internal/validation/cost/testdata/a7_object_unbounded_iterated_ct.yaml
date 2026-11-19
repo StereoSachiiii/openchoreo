@@ -1,0 +1,25 @@
+// Scenario: A7_ComponentType_Unbounded - Object with no maxProperties, expression iterating keys
+// Invariant: Unbounded object/map fallback DefaultMaxProperties = 629,145 pushes comprehension over budget.
+// Expected result: Rejected for cost.
+apiVersion: openchoreo.dev/v1alpha1
+kind: ComponentType
+metadata:
+  name: a7-object-unbounded-iterated
+  namespace: default
+spec:
+  workloadType: deployment
+  parameters:
+    openAPIV3Schema:
+      type: object
+      properties:
+        metadataMap:
+          type: object
+  resources:
+    - id: deployment
+      template:
+        apiVersion: apps/v1
+        kind: Deployment
+        metadata:
+          name: test-app
+        spec:
+          replicas: "${parameters.metadataMap.all(k, true) ? 1 : 0}"

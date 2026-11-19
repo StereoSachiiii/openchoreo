@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 
+	apiextschema "k8s.io/apiextensions-apiserver/pkg/apiserver/schema"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/validation/field"
@@ -17,6 +18,7 @@ import (
 
 	openchoreodevv1alpha1 "github.com/openchoreo/openchoreo/api/v1alpha1"
 	"github.com/openchoreo/openchoreo/internal/validation/component"
+	"github.com/openchoreo/openchoreo/internal/validation/cost"
 	"github.com/openchoreo/openchoreo/internal/validation/schemautil"
 )
 
@@ -26,8 +28,13 @@ var clustercomponenttypelog = logf.Log.WithName("clustercomponenttype-resource")
 
 // SetupClusterComponentTypeWebhookWithManager registers the webhook for ClusterComponentType in the manager.
 func SetupClusterComponentTypeWebhookWithManager(mgr ctrl.Manager) error {
+	return SetupClusterComponentTypeWebhookWithManagerAndCostLimit(mgr, 0)
+}
+
+// SetupClusterComponentTypeWebhookWithManagerAndCostLimit registers the webhook with a custom per-expression CEL cost limit.
+func SetupClusterComponentTypeWebhookWithManagerAndCostLimit(mgr ctrl.Manager, celCostLimit uint64) error {
 	return ctrl.NewWebhookManagedBy(mgr, &openchoreodevv1alpha1.ClusterComponentType{}).
-		WithCustomValidator(&Validator{}).
+		WithCustomValidator(NewValidator(cost.Mode(""), cost.WithExpressionLimit(celCostLimit))).
 		Complete()
 }
 
@@ -35,30 +42,50 @@ func SetupClusterComponentTypeWebhookWithManager(mgr ctrl.Manager) error {
 
 // Validator validates ClusterComponentType resources
 // +kubebuilder:object:generate=false
-type Validator struct{}
+type Validator struct {
+	costChecker *cost.WebhookCostChecker
+}
+
+// NewValidator constructs a Validator wired with the ComponentDomainEstimator.
+func NewValidator(mode cost.Mode, opts ...cost.Option) *Validator {
+	return &Validator{
+		costChecker: cost.NewWebhookCostChecker(&component.ComponentDomainEstimator{}, mode, opts...),
+	}
+}
+
+func (v *Validator) getCostChecker() *cost.WebhookCostChecker {
+	if v.costChecker != nil {
+		return v.costChecker
+	}
+	return NewValidator("").costChecker
+}
 
 var _ webhook.CustomValidator = &Validator{}
 
 // ValidateCreate implements webhook.CustomValidator so a webhook will be registered for the type ClusterComponentType.
-func (v *Validator) ValidateCreate(_ context.Context, obj runtime.Object) (admission.Warnings, error) {
+func (v *Validator) ValidateCreate(ctx context.Context, obj runtime.Object) (admission.Warnings, error) {
 	clustercomponenttype, ok := obj.(*openchoreodevv1alpha1.ClusterComponentType)
 	if !ok {
 		return nil, fmt.Errorf("expected a ClusterComponentType object but got %T", obj)
 	}
 	clustercomponenttypelog.Info("Validation for ClusterComponentType upon creation", "name", clustercomponenttype.GetName())
 
-	allErrs := validateClusterComponentType(clustercomponenttype)
+	parametersSchema, envConfigsSchema, allErrs := validateClusterComponentType(clustercomponenttype)
 
 	if len(allErrs) > 0 {
 		return nil, apierrors.NewInvalid(clustercomponenttype.GroupVersionKind().GroupKind(), clustercomponenttype.GetName(), allErrs)
 	}
 
-	return nil, nil
+	// Admission cost analysis via WebhookCostChecker contract
+	return v.getCostChecker().ValidateCreate(ctx, clustercomponenttype, cost.SchemaPair{
+		Parameters:         parametersSchema,
+		EnvironmentConfigs: envConfigsSchema,
+	})
 }
 
 // ValidateUpdate implements webhook.CustomValidator so a webhook will be registered for the type ClusterComponentType.
-func (v *Validator) ValidateUpdate(_ context.Context, oldObj, newObj runtime.Object) (admission.Warnings, error) {
-	_, ok := oldObj.(*openchoreodevv1alpha1.ClusterComponentType)
+func (v *Validator) ValidateUpdate(ctx context.Context, oldObj, newObj runtime.Object) (admission.Warnings, error) {
+	oldClusterComponentType, ok := oldObj.(*openchoreodevv1alpha1.ClusterComponentType)
 	if !ok {
 		return nil, fmt.Errorf("expected a ClusterComponentType object for the oldObj but got %T", oldObj)
 	}
@@ -71,13 +98,24 @@ func (v *Validator) ValidateUpdate(_ context.Context, oldObj, newObj runtime.Obj
 
 	// Note: spec.workloadType immutability is enforced by CEL rules in the CRD schema
 
-	allErrs := validateClusterComponentType(newClusterComponentType)
+	parametersSchema, envConfigsSchema, allErrs := validateClusterComponentType(newClusterComponentType)
 
 	if len(allErrs) > 0 {
 		return nil, apierrors.NewInvalid(newClusterComponentType.GroupVersionKind().GroupKind(), newClusterComponentType.GetName(), allErrs)
 	}
 
-	return nil, nil
+	oldParamSchema, oldEnvSchema := schemautil.ExtractSchemasBestEffort(
+		oldClusterComponentType.Spec.Parameters, oldClusterComponentType.Spec.EnvironmentConfigs,
+	)
+
+	// Cost ratchet evaluation via WebhookCostChecker contract
+	return v.getCostChecker().ValidateUpdate(
+		ctx,
+		oldClusterComponentType,
+		newClusterComponentType,
+		cost.SchemaPair{Parameters: oldParamSchema, EnvironmentConfigs: oldEnvSchema},
+		cost.SchemaPair{Parameters: parametersSchema, EnvironmentConfigs: envConfigsSchema},
+	)
 }
 
 // ValidateDelete implements webhook.CustomValidator so a webhook will be registered for the type ClusterComponentType.
@@ -93,7 +131,7 @@ func (v *Validator) ValidateDelete(_ context.Context, obj runtime.Object) (admis
 }
 
 // validateClusterComponentType performs all validation for a ClusterComponentType.
-func validateClusterComponentType(cct *openchoreodevv1alpha1.ClusterComponentType) field.ErrorList {
+func validateClusterComponentType(cct *openchoreodevv1alpha1.ClusterComponentType) (*apiextschema.Structural, *apiextschema.Structural, field.ErrorList) {
 	allErrs := field.ErrorList{}
 
 	// Extract and validate schemas, getting structural schemas for CEL validation
@@ -128,7 +166,7 @@ func validateClusterComponentType(cct *openchoreodevv1alpha1.ClusterComponentTyp
 		cct.Spec.AllowedEndpoints, field.NewPath("spec", "allowedEndpoints"),
 	)...)
 
-	return allErrs
+	return parametersSchema, envConfigsSchema, allErrs
 }
 
 // validateEmbeddedTraits validates the embedded traits in a ClusterComponentType.

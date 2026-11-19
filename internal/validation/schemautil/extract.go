@@ -1,6 +1,7 @@
 // Copyright 2025 The OpenChoreo Authors
 // SPDX-License-Identifier: Apache-2.0
 
+// Package schemautil extracts and converts OpenAPI structural schemas into bounded CEL DeclTypes.
 package schemautil
 
 import (
@@ -47,6 +48,23 @@ func ExtractStructuralSchemas(
 	}
 
 	return parametersSchema, envConfigsSchema, allErrs
+}
+
+// ExtractSchemasBestEffort extracts structural schemas without failing on legacy schema errors.
+// Any section that fails to resolve is returned as nil so update ratchets treat it conservatively.
+func ExtractSchemasBestEffort(
+	parameters *v1alpha1.SchemaSection,
+	environmentConfigs *v1alpha1.SchemaSection,
+) (*apiextschema.Structural, *apiextschema.Structural) {
+	parametersSchema, err := schema.ResolveSectionToStructural(parameters)
+	if err != nil {
+		parametersSchema = nil
+	}
+	envConfigsSchema, err := schema.ResolveSectionToStructural(environmentConfigs)
+	if err != nil {
+		envConfigsSchema = nil
+	}
+	return parametersSchema, envConfigsSchema
 }
 
 // ExtractAndValidateSchemas extracts structural schemas and validates openAPIV3Schema fields.

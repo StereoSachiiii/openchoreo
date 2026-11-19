@@ -83,6 +83,7 @@ spec:
                   - kind
                   - name
                   type: object
+                maxItems: 100
                 type: array
                 x-kubernetes-list-map-keys:
                 - id
@@ -131,6 +132,7 @@ spec:
                   - id
                   - template
                   type: object
+                maxItems: 100
                 type: array
               runTemplate:
                 description: |-

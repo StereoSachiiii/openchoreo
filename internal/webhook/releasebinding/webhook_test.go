@@ -135,6 +135,21 @@ var _ = Describe("ReleaseBinding Webhook", func() {
 			Expect(err).NotTo(HaveOccurred())
 		})
 
+		It("should admit ReleaseBinding creation with arbitrary environment configs (no blind bounds)", func() {
+			obj := &openchoreodevv1alpha1.ReleaseBinding{}
+			raw := `{"replicas":5,"rules":[`
+			for i := 0; i < 251; i++ {
+				if i > 0 {
+					raw += ","
+				}
+				raw += `{"port":80}`
+			}
+			raw += `]}`
+			obj.Spec.ComponentTypeEnvironmentConfigs = &runtime.RawExtension{Raw: []byte(raw)}
+			_, err := validator.ValidateCreate(ctx, obj)
+			Expect(err).NotTo(HaveOccurred())
+		})
+
 		It("should admit ReleaseBinding update (no-op validator)", func() {
 			oldObj := &openchoreodevv1alpha1.ReleaseBinding{}
 			newObj := &openchoreodevv1alpha1.ReleaseBinding{}

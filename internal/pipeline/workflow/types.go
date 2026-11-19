@@ -91,5 +91,25 @@ type WorkflowContext struct {
 type WorkflowPlaneData struct {
 	// SecretStore is the name of the ESO ClusterSecretStore configured on the workflow plane.
 	// Exposed as ${workflowplane.secretStore}.
-	SecretStore string
+	SecretStore string `json:"secretStore,omitempty"`
+}
+
+// WorkflowMetadataContext represents the metadata object exposed to CEL as ${metadata.*}.
+type WorkflowMetadataContext struct {
+	Name            string            `json:"name,omitempty"`
+	Namespace       string            `json:"namespace"`
+	NamespaceName   string            `json:"namespaceName"`
+	WorkflowRunName string            `json:"workflowRunName"`
+	ProjectName     string            `json:"projectName,omitempty"`
+	Labels          map[string]string `json:"labels"`
+}
+
+// WorkflowCELContext represents the root CEL evaluation context for Workflow templates.
+// Reflected by WorkflowCostAggregator via decltype.ExtractFields so the static cost
+// environment stays synchronized with BuildCELContext.
+type WorkflowCELContext struct {
+	Metadata      WorkflowMetadataContext `json:"metadata"`
+	WorkflowPlane WorkflowPlaneData       `json:"workflowplane"`
+	Parameters    map[string]any          `json:"parameters"`
+	ExternalRefs  map[string]any          `json:"externalRefs"`
 }

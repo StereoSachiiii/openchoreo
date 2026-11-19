@@ -218,9 +218,17 @@ func TestToIterableItemsRejectsCumulativeExpansion(t *testing.T) {
 	ctx := WithForEachBudget(t.Context())
 	items := make([]any, maxForEachItems)
 
-	for i := 0; i < maxForEachItemsPerRender/maxForEachItems; i++ {
+	var total int
+	for total+maxForEachItems <= maxForEachItemsPerRender {
 		if _, err := ToIterableItems(ctx, items); err != nil {
-			t.Fatalf("expansion %d unexpectedly exceeded the cumulative limit: %v", i, err)
+			t.Fatalf("expansion at total %d unexpectedly exceeded limit: %v", total, err)
+		}
+		total += maxForEachItems
+	}
+	if rem := maxForEachItemsPerRender - total; rem > 0 {
+		remItems := make([]any, rem)
+		if _, err := ToIterableItems(ctx, remItems); err != nil {
+			t.Fatalf("remainder expansion unexpectedly failed: %v", err)
 		}
 	}
 

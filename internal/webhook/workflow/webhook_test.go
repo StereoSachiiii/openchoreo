@@ -12,6 +12,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 
 	openchoreodevv1alpha1 "github.com/openchoreo/openchoreo/api/v1alpha1"
+	"github.com/openchoreo/openchoreo/internal/validation/cost"
 )
 
 var _ = Describe("Workflow Webhook", func() {
@@ -19,7 +20,7 @@ var _ = Describe("Workflow Webhook", func() {
 		ctx       context.Context
 		obj       *openchoreodevv1alpha1.Workflow
 		oldObj    *openchoreodevv1alpha1.Workflow
-		validator Validator
+		validator *Validator
 		defaulter Defaulter
 	)
 
@@ -33,7 +34,7 @@ var _ = Describe("Workflow Webhook", func() {
 			},
 		}
 		oldObj = &openchoreodevv1alpha1.Workflow{}
-		validator = Validator{}
+		validator = &Validator{}
 		defaulter = Defaulter{}
 		Expect(validator).NotTo(BeNil(), "Expected validator to be initialized")
 		Expect(defaulter).NotTo(BeNil(), "Expected defaulter to be initialized")
@@ -364,6 +365,39 @@ var _ = Describe("Workflow Webhook", func() {
 			}
 			_, err := validator.ValidateCreate(ctx, obj)
 			Expect(err).To(HaveOccurred())
+		})
+	})
+
+	Context("CEL Cost Enforcement", func() {
+		overbudgetWF := func() *openchoreodevv1alpha1.Workflow {
+			return &openchoreodevv1alpha1.Workflow{
+				Spec: openchoreodevv1alpha1.WorkflowSpec{
+					Parameters: &openchoreodevv1alpha1.SchemaSection{
+						OpenAPIV3Schema: &runtime.RawExtension{
+							Raw: []byte(`{"type":"object","properties":{"stages":{"type":"array","maxItems":60,"items":{"type":"string"}}}}`),
+						},
+					},
+					RunTemplate: &runtime.RawExtension{
+						Raw: []byte(`{"apiVersion":"batch/v1","kind":"Job","metadata":{"name":"runner","namespace":"${metadata.namespace}"},"spec":{"template":{"spec":{"containers":[{"name":"job","command":["${parameters.stages.map(s1, parameters.stages.map(s2, parameters.stages.map(s3, s1 + s2 + s3))).size()}"]}]}}}}`),
+					},
+				},
+			}
+		}
+
+		It("enforce mode rejects an over-budget Workflow on create", func() {
+			enforceVal := NewValidator(cost.ModeEnforce)
+			warnings, err := enforceVal.ValidateCreate(ctx, overbudgetWF())
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("CEL cost verdict: OVER BUDGET"))
+			Expect(warnings).To(BeEmpty())
+		})
+
+		It("warn mode admits an over-budget Workflow with admission warnings", func() {
+			warnVal := NewValidator(cost.ModeWarn)
+			warnings, err := warnVal.ValidateCreate(ctx, overbudgetWF())
+			Expect(err).NotTo(HaveOccurred())
+			Expect(warnings).To(HaveLen(1))
+			Expect(warnings[0]).To(ContainSubstring("CEL cost verdict: OVER BUDGET"))
 		})
 	})
 })

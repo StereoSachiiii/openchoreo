@@ -12,6 +12,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 
 	openchoreodevv1alpha1 "github.com/openchoreo/openchoreo/api/v1alpha1"
+	"github.com/openchoreo/openchoreo/internal/validation/cost"
 )
 
 // validTemplate returns a minimal RawExtension for a ConfigMap manifest.
@@ -128,6 +129,45 @@ var _ = Describe("ResourceType Webhook", func() {
 		It("returns an error for non-ResourceType objects", func() {
 			_, err := validator.ValidateDelete(ctx, &openchoreodevv1alpha1.ClusterResourceType{})
 			Expect(err).To(HaveOccurred())
+		})
+	})
+
+	Context("CEL Cost Enforcement", func() {
+		overbudgetRT := func() *openchoreodevv1alpha1.ResourceType {
+			return &openchoreodevv1alpha1.ResourceType{
+				Spec: openchoreodevv1alpha1.ResourceTypeSpec{
+					Parameters: &openchoreodevv1alpha1.SchemaSection{
+						OpenAPIV3Schema: &runtime.RawExtension{
+							Raw: []byte(`{"type":"object","properties":{"tags":{"type":"array","maxItems":60,"items":{"type":"string"}}}}`),
+						},
+					},
+					Resources: []openchoreodevv1alpha1.ResourceTypeManifest{
+						{ID: "claim", Template: validTemplate()},
+					},
+					Outputs: []openchoreodevv1alpha1.ResourceTypeOutput{
+						{
+							Name:  "computed",
+							Value: "${parameters.tags.map(a, parameters.tags.map(b, parameters.tags.map(c, a + b + c))).size()}",
+						},
+					},
+				},
+			}
+		}
+
+		It("enforce mode rejects an over-budget ResourceType on create", func() {
+			enforceVal := NewValidator(cost.ModeEnforce)
+			warnings, err := enforceVal.ValidateCreate(ctx, overbudgetRT())
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("CEL cost verdict: OVER BUDGET"))
+			Expect(warnings).To(BeEmpty())
+		})
+
+		It("warn mode admits an over-budget ResourceType with admission warnings", func() {
+			warnVal := NewValidator(cost.ModeWarn)
+			warnings, err := warnVal.ValidateCreate(ctx, overbudgetRT())
+			Expect(err).NotTo(HaveOccurred())
+			Expect(warnings).To(HaveLen(1))
+			Expect(warnings[0]).To(ContainSubstring("CEL cost verdict: OVER BUDGET"))
 		})
 	})
 })

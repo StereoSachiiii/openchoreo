@@ -1,0 +1,28 @@
+// Scenario: A4_ComponentType - Same as A3 with maxItems added
+// Invariant: Adding maxItems brings estimated cost under 2,000,000 budget. Only difference from A3 is maxItems: 50.
+// Expected result: Admitted.
+apiVersion: openchoreo.dev/v1alpha1
+kind: ComponentType
+metadata:
+  name: a4-list-bounded-iterated
+  namespace: default
+spec:
+  workloadType: deployment
+  parameters:
+    openAPIV3Schema:
+      type: object
+      properties:
+        tags:
+          type: array
+          maxItems: 50
+          items:
+            type: string
+  resources:
+    - id: deployment
+      template:
+        apiVersion: apps/v1
+        kind: Deployment
+        metadata:
+          name: test-app
+        spec:
+          replicas: "${parameters.tags.map(t, t).size() + 1}"

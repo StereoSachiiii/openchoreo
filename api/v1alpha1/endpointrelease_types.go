@@ -28,6 +28,7 @@ type EndpointReleaseSpec struct {
 	// Visibility holds the snapshot of the visibilities requested by the
 	// Endpoint at release time.
 	// +kubebuilder:validation:MinItems=1
+	// +kubebuilder:validation:MaxItems=3
 	// +listType=set
 	Visibility []EndpointVisibility `json:"visibility"`
 

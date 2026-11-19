@@ -15,4 +15,5 @@ import "embed"
 //go:embed bases/openchoreo.dev_clusterworkflows.yaml
 //go:embed bases/openchoreo.dev_endpointtypes.yaml
 //go:embed bases/openchoreo.dev_clusterendpointtypes.yaml
+//go:embed bases/openchoreo.dev_workloads.yaml
 var FS embed.FS

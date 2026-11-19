@@ -225,6 +225,7 @@ spec:
                           required:
                           - name
                           type: object
+                        maxItems: 100
                         type: array
                       allowedWorkflows:
                         description: |-
@@ -251,6 +252,7 @@ spec:
                           required:
                           - name
                           type: object
+                        maxItems: 100
                         type: array
                       environmentConfigs:
                         description: EnvironmentConfigs defines per-environment configs
@@ -367,6 +369,7 @@ spec:
                           x-kubernetes-validations:
                           - message: var is required when forEach is specified
                             rule: '!has(self.forEach) || has(self.var)'
+                        maxItems: 100
                         type: array
                       preRenderValidations:
                         description: |-
@@ -392,6 +395,7 @@ spec:
                           - message
                           - rule
                           type: object
+                        maxItems: 100
                         type: array
                       resources:
                         description: |-
@@ -450,6 +454,7 @@ spec:
                           x-kubernetes-validations:
                           - message: var is required when forEach is specified
                             rule: '!has(self.forEach) || has(self.var)'
+                        maxItems: 100
                         minItems: 1
                         type: array
                       traits:
@@ -501,6 +506,7 @@ spec:
                           - instanceName
                           - name
                           type: object
+                        maxItems: 100
                         type: array
                       validations:
                         description: |-
@@ -527,6 +533,7 @@ spec:
                           - message
                           - rule
                           type: object
+                        maxItems: 100
                         type: array
                       workloadType:
                         description: |-
@@ -672,6 +679,7 @@ spec:
                             x-kubernetes-validations:
                             - message: var is required when forEach is specified
                               rule: '!has(self.forEach) || has(self.var)'
+                          maxItems: 100
                           type: array
                         environmentConfigs:
                           description: EnvironmentConfigs defines per-environment
@@ -740,6 +748,7 @@ spec:
                                   - op
                                   - path
                                   type: object
+                                maxItems: 100
                                 minItems: 1
                                 type: array
                               target:
@@ -794,6 +803,7 @@ spec:
                             x-kubernetes-validations:
                             - message: var is required when forEach is specified
                               rule: '!has(self.forEach) || has(self.var)'
+                          maxItems: 100
                           type: array
                         postRenderValidations:
                           description: |-
@@ -890,6 +900,7 @@ spec:
                             x-kubernetes-validations:
                             - message: var is required when forEach is specified
                               rule: '!has(self.forEach) || has(self.var)'
+                          maxItems: 100
                           type: array
                         preRenderValidations:
                           description: |-
@@ -915,6 +926,7 @@ spec:
                             - message
                             - rule
                             type: object
+                          maxItems: 100
                           type: array
                         removes:
                           description: |-
@@ -984,6 +996,7 @@ spec:
                             x-kubernetes-validations:
                             - message: var is required when forEach is specified
                               rule: '!has(self.forEach) || has(self.var)'
+                          maxItems: 100
                           type: array
                         validations:
                           description: |-
@@ -1010,6 +1023,7 @@ spec:
                             - message
                             - rule
                             type: object
+                          maxItems: 100
                           type: array
                       type: object
                       x-kubernetes-validations:
@@ -1040,11 +1054,13 @@ spec:
                       args:
                         items:
                           type: string
+                        maxItems: 128
                         type: array
                       command:
                         description: Container entrypoint & args.
                         items:
                           type: string
+                        maxItems: 32
                         type: array
                       env:
                         description: Explicit environment variables.
@@ -1085,6 +1101,7 @@ spec:
                           x-kubernetes-validations:
                           - message: value and valueFrom are mutually exclusive
                             rule: '!(has(self.value) && has(self.valueFrom))'
+                        maxItems: 1024
                         type: array
                       files:
                         description: File configurations.
@@ -1129,9 +1146,11 @@ spec:
                           x-kubernetes-validations:
                           - message: value and valueFrom are mutually exclusive
                             rule: '!(has(self.value) && has(self.valueFrom))'
+                        maxItems: 256
                         type: array
                       image:
                         description: OCI image to run (digest or tag).
+                        maxLength: 1024
                         minLength: 1
                         type: string
                     required:
@@ -1348,6 +1367,7 @@ spec:
                             - internal
                             - external
                             type: string
+                          maxItems: 4
                           type: array
                           x-kubernetes-list-type: set
                       required:
@@ -1356,6 +1376,7 @@ spec:
                     description: |-
                       Endpoints define simple network endpoints for basic port exposure.
                       The key is the endpoint name, and the value is the endpoint specification.
+                    maxProperties: 128
                     type: object
                   source:
                     description: |-

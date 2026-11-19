@@ -16,7 +16,9 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
 	openchoreodevv1alpha1 "github.com/openchoreo/openchoreo/api/v1alpha1"
+	"github.com/openchoreo/openchoreo/internal/validation/cost"
 	resourcevalidation "github.com/openchoreo/openchoreo/internal/validation/resource"
+	"github.com/openchoreo/openchoreo/internal/validation/schemautil"
 )
 
 //nolint:unused // exported via webhook bootstrap; keeps parity with sibling webhooks
@@ -25,8 +27,13 @@ var clusterresourcetypelog = logf.Log.WithName("clusterresourcetype-resource")
 // SetupClusterResourceTypeWebhookWithManager registers the validating webhook
 // for ClusterResourceType in the manager.
 func SetupClusterResourceTypeWebhookWithManager(mgr ctrl.Manager) error {
+	return SetupClusterResourceTypeWebhookWithManagerAndCostLimit(mgr, 0)
+}
+
+// SetupClusterResourceTypeWebhookWithManagerAndCostLimit registers the webhook with a custom per-expression CEL cost limit.
+func SetupClusterResourceTypeWebhookWithManagerAndCostLimit(mgr ctrl.Manager, celCostLimit uint64) error {
 	return ctrl.NewWebhookManagedBy(mgr, &openchoreodevv1alpha1.ClusterResourceType{}).
-		WithCustomValidator(&Validator{}).
+		WithCustomValidator(NewValidator(cost.Mode(""), cost.WithExpressionLimit(celCostLimit))).
 		Complete()
 }
 
@@ -34,32 +41,51 @@ func SetupClusterResourceTypeWebhookWithManager(mgr ctrl.Manager) error {
 
 // Validator validates ClusterResourceType resources.
 // +kubebuilder:object:generate=false
-type Validator struct{}
+type Validator struct {
+	costChecker *cost.WebhookCostChecker
+}
+
+// NewValidator constructs a Validator wired with the ResourceDomainEstimator.
+func NewValidator(mode cost.Mode, opts ...cost.Option) *Validator {
+	return &Validator{
+		costChecker: cost.NewWebhookCostChecker(&resourcevalidation.ResourceDomainEstimator{}, mode, opts...),
+	}
+}
+
+func (v *Validator) getCostChecker() *cost.WebhookCostChecker {
+	if v.costChecker != nil {
+		return v.costChecker
+	}
+	return NewValidator("").costChecker
+}
 
 var _ webhook.CustomValidator = &Validator{}
 
 // ValidateCreate runs the cluster-scoped resource-type spec validator.
-func (v *Validator) ValidateCreate(_ context.Context, obj runtime.Object) (admission.Warnings, error) {
+func (v *Validator) ValidateCreate(ctx context.Context, obj runtime.Object) (admission.Warnings, error) {
 	crt, ok := obj.(*openchoreodevv1alpha1.ClusterResourceType)
 	if !ok {
 		return nil, fmt.Errorf("expected a ClusterResourceType object but got %T", obj)
 	}
 	clusterresourcetypelog.Info("Validation for ClusterResourceType upon creation", "name", crt.GetName())
 
-	errs := resourcevalidation.ValidateClusterResourceTypeSpec(&crt.Spec, field.NewPath("spec"))
+	paramSchema, envConfigSchema, errs := resourcevalidation.ValidateClusterResourceTypeSpecWithSchemas(&crt.Spec, field.NewPath("spec"))
 	errs = append(errs, resourcevalidation.ValidateLocalDevAddressesAnnotation(
 		crt.Annotations, crt.Spec.Outputs, field.NewPath("metadata", "annotations"))...)
 	if len(errs) > 0 {
 		return nil, apierrors.NewInvalid(crt.GroupVersionKind().GroupKind(), crt.GetName(), errs)
 	}
-	return nil, nil
+
+	return v.getCostChecker().ValidateCreate(ctx, crt, cost.SchemaPair{
+		Parameters:         paramSchema,
+		EnvironmentConfigs: envConfigSchema,
+	})
 }
 
-// ValidateUpdate re-runs the validator on the new object. Spec immutability
-// for individual fields is enforced by CRD CEL markers; the rest of the spec
-// is re-validated to catch CEL drift introduced by an update.
-func (v *Validator) ValidateUpdate(_ context.Context, oldObj, newObj runtime.Object) (admission.Warnings, error) {
-	if _, ok := oldObj.(*openchoreodevv1alpha1.ClusterResourceType); !ok {
+// ValidateUpdate re-runs the validator on the new object.
+func (v *Validator) ValidateUpdate(ctx context.Context, oldObj, newObj runtime.Object) (admission.Warnings, error) {
+	oldCRT, ok := oldObj.(*openchoreodevv1alpha1.ClusterResourceType)
+	if !ok {
 		return nil, fmt.Errorf("expected a ClusterResourceType object for the oldObj but got %T", oldObj)
 	}
 	crt, ok := newObj.(*openchoreodevv1alpha1.ClusterResourceType)
@@ -68,13 +94,24 @@ func (v *Validator) ValidateUpdate(_ context.Context, oldObj, newObj runtime.Obj
 	}
 	clusterresourcetypelog.Info("Validation for ClusterResourceType upon update", "name", crt.GetName())
 
-	errs := resourcevalidation.ValidateClusterResourceTypeSpec(&crt.Spec, field.NewPath("spec"))
+	paramSchema, envConfigSchema, errs := resourcevalidation.ValidateClusterResourceTypeSpecWithSchemas(&crt.Spec, field.NewPath("spec"))
 	errs = append(errs, resourcevalidation.ValidateLocalDevAddressesAnnotation(
 		crt.Annotations, crt.Spec.Outputs, field.NewPath("metadata", "annotations"))...)
 	if len(errs) > 0 {
 		return nil, apierrors.NewInvalid(crt.GroupVersionKind().GroupKind(), crt.GetName(), errs)
 	}
-	return nil, nil
+
+	oldParamSchema, oldEnvSchema := schemautil.ExtractSchemasBestEffort(
+		oldCRT.Spec.Parameters, oldCRT.Spec.EnvironmentConfigs,
+	)
+
+	return v.getCostChecker().ValidateUpdate(
+		ctx,
+		oldCRT,
+		crt,
+		cost.SchemaPair{Parameters: oldParamSchema, EnvironmentConfigs: oldEnvSchema},
+		cost.SchemaPair{Parameters: paramSchema, EnvironmentConfigs: envConfigSchema},
+	)
 }
 
 // ValidateDelete is a no-op. ClusterResourceType deletion is gated by RBAC

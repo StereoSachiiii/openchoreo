@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"math"
 	"sync"
+
+	"github.com/openchoreo/openchoreo/internal/limits"
 )
 
 // CostBudget accumulates the CEL evaluation cost spent across every Render that shares it.
@@ -120,10 +122,7 @@ func (b *CostBudget) breachError() error {
 // It is unexported so the sizing arithmetic stays beside renderBudgetFactor: callers seed
 // a budget through WithReconcileBudget and never handle the number themselves.
 func reconcileBudget(costLimit uint64) uint64 {
-	if costLimit == 0 {
-		costLimit = defaultCELCostLimit
-	}
-	return costLimit * renderBudgetFactor
+	return limits.ReconcileBudget(costLimit)
 }
 
 type budgetKey struct{}

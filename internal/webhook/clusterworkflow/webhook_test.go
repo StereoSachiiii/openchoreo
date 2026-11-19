@@ -12,6 +12,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 
 	openchoreodevv1alpha1 "github.com/openchoreo/openchoreo/api/v1alpha1"
+	"github.com/openchoreo/openchoreo/internal/validation/cost"
 )
 
 var _ = Describe("ClusterWorkflow Webhook", func() {
@@ -19,7 +20,7 @@ var _ = Describe("ClusterWorkflow Webhook", func() {
 		ctx       context.Context
 		obj       *openchoreodevv1alpha1.ClusterWorkflow
 		oldObj    *openchoreodevv1alpha1.ClusterWorkflow
-		validator Validator
+		validator *Validator
 		defaulter Defaulter
 	)
 
@@ -37,7 +38,7 @@ var _ = Describe("ClusterWorkflow Webhook", func() {
 			},
 		}
 		oldObj = &openchoreodevv1alpha1.ClusterWorkflow{}
-		validator = Validator{}
+		validator = &Validator{}
 		defaulter = Defaulter{}
 		Expect(validator).NotTo(BeNil(), "Expected validator to be initialized")
 		Expect(defaulter).NotTo(BeNil(), "Expected defaulter to be initialized")
@@ -208,6 +209,39 @@ var _ = Describe("ClusterWorkflow Webhook", func() {
 			spec, ok := raw["spec"].(map[string]any)
 			Expect(ok).To(BeTrue())
 			Expect(spec["serviceAccountName"]).To(Equal("workflow-sa"))
+		})
+	})
+
+	Context("CEL Cost Enforcement", func() {
+		overbudgetCWF := func() *openchoreodevv1alpha1.ClusterWorkflow {
+			return &openchoreodevv1alpha1.ClusterWorkflow{
+				Spec: openchoreodevv1alpha1.ClusterWorkflowSpec{
+					Parameters: &openchoreodevv1alpha1.SchemaSection{
+						OpenAPIV3Schema: &runtime.RawExtension{
+							Raw: []byte(`{"type":"object","properties":{"stages":{"type":"array","maxItems":60,"items":{"type":"string"}}}}`),
+						},
+					},
+					RunTemplate: &runtime.RawExtension{
+						Raw: []byte(`{"apiVersion":"batch/v1","kind":"Job","metadata":{"name":"runner","namespace":"${metadata.namespace}"},"spec":{"template":{"spec":{"containers":[{"name":"job","command":["${parameters.stages.map(s1, parameters.stages.map(s2, parameters.stages.map(s3, s1 + s2 + s3))).size()}"]}]}}}}`),
+					},
+				},
+			}
+		}
+
+		It("enforce mode rejects an over-budget ClusterWorkflow on create", func() {
+			enforceVal := NewValidator(cost.ModeEnforce)
+			warnings, err := enforceVal.ValidateCreate(ctx, overbudgetCWF())
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("CEL cost verdict: OVER BUDGET"))
+			Expect(warnings).To(BeEmpty())
+		})
+
+		It("warn mode admits an over-budget ClusterWorkflow with admission warnings", func() {
+			warnVal := NewValidator(cost.ModeWarn)
+			warnings, err := warnVal.ValidateCreate(ctx, overbudgetCWF())
+			Expect(err).NotTo(HaveOccurred())
+			Expect(warnings).To(HaveLen(1))
+			Expect(warnings[0]).To(ContainSubstring("CEL cost verdict: OVER BUDGET"))
 		})
 	})
 })

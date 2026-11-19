@@ -1,0 +1,28 @@
+// Scenario: A1_ComponentType - List with maxItems 20, expression iterating it
+// Invariant: Assumed size >= Permitted size. MaxItems 20 provides static upper bound to CEL iteration.
+// Expected result: Admitted (under budget).
+apiVersion: openchoreo.dev/v1alpha1
+kind: ComponentType
+metadata:
+  name: a1-list-bounded
+  namespace: default
+spec:
+  workloadType: deployment
+  parameters:
+    openAPIV3Schema:
+      type: object
+      properties:
+        routes:
+          type: array
+          maxItems: 20
+          items:
+            type: string
+  resources:
+    - id: deployment
+      template:
+        apiVersion: apps/v1
+        kind: Deployment
+        metadata:
+          name: test-app
+        spec:
+          replicas: "${parameters.routes.map(r, r).size() + 1}"

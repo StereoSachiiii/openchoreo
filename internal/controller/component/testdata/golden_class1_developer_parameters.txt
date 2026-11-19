@@ -1,0 +1,4 @@
+Failed to handle autoDeploy: Component parameters don't match the ComponentType's rules:
+  • spec.parameters.allowedIPs: has 1500 items, ComponentType allows at most 1000
+  • spec.parameters.logLevel: "verbose" is not one of: debug, info, warn, error
+To fix: edit these fields in your Component.

@@ -50,6 +50,7 @@ type WorkflowSpec struct {
 	// to be deployed alongside the workflow run (e.g., secrets, configmaps).
 	// Template variables are substituted with context and parameter values using CEL expressions.
 	// +optional
+	// +kubebuilder:validation:MaxItems=100
 	Resources []WorkflowResource `json:"resources,omitempty"`
 
 	// ExternalRefs declares references to external CRs that are resolved at runtime
@@ -58,6 +59,7 @@ type WorkflowSpec struct {
 	// +optional
 	// +listType=map
 	// +listMapKey=id
+	// +kubebuilder:validation:MaxItems=100
 	ExternalRefs []ExternalRef `json:"externalRefs,omitempty"`
 
 	// TTLAfterCompletion defines the time-to-live for WorkflowRun instances after completion.

@@ -23,6 +23,7 @@ type EndpointTypeSpec struct {
 	// Validations are CEL-based rules evaluated before rendering. All rules must
 	// evaluate to true for rendering to proceed.
 	// +optional
+	// +kubebuilder:validation:MaxItems=100
 	Validations []ValidationRule `json:"validations,omitempty"`
 
 	// URLs declares, per visibility, where clients reach the endpoint and how
@@ -44,6 +45,7 @@ type EndpointTypeSpec struct {
 	// +kubebuilder:validation:MinItems=1
 	// +listType=map
 	// +listMapKey=id
+	// +kubebuilder:validation:MaxItems=100
 	Resources []ResourceTemplate `json:"resources"`
 }
 

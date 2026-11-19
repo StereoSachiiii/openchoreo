@@ -12,6 +12,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 
 	openchoreodevv1alpha1 "github.com/openchoreo/openchoreo/api/v1alpha1"
+	"github.com/openchoreo/openchoreo/internal/limits"
 )
 
 var _ = Describe("ClusterTrait Webhook", func() {
@@ -27,7 +28,7 @@ var _ = Describe("ClusterTrait Webhook", func() {
 		obj = &openchoreodevv1alpha1.ClusterTrait{}
 		oldObj = &openchoreodevv1alpha1.ClusterTrait{}
 		validator = Validator{}
-		Expect(validator).NotTo(BeNil(), "Expected validator to be initialized")
+		Expect(&validator).NotTo(BeNil(), "Expected validator to be initialized")
 		Expect(oldObj).NotTo(BeNil(), "Expected oldObj to be initialized")
 		Expect(obj).NotTo(BeNil(), "Expected obj to be initialized")
 	})
@@ -486,6 +487,25 @@ var _ = Describe("ClusterTrait Webhook", func() {
 			err := k8sClient.Create(ctx, ct)
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("only one of"))
+		})
+		It("emits default bounds warning when schema omits bounds", func() {
+			limits.SetActiveSchemaBounds(limits.OptInSchemaBounds())
+			defer limits.SetActiveSchemaBounds(limits.DefaultSchemaBounds())
+
+			ct := &openchoreodevv1alpha1.ClusterTrait{
+				ObjectMeta: metav1.ObjectMeta{Name: "unbounded-ct"},
+				Spec: openchoreodevv1alpha1.ClusterTraitSpec{
+					Parameters: &openchoreodevv1alpha1.SchemaSection{
+						OpenAPIV3Schema: &runtime.RawExtension{
+							Raw: []byte(`{"type":"object","properties":{"tags":{"type":"array","items":{"type":"string"}}}}`),
+						},
+					},
+				},
+			}
+			warnings, err := validator.ValidateCreate(ctx, ct)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(warnings).NotTo(BeEmpty())
+			Expect(warnings).To(ContainElement(ContainSubstring("spec.parameters.properties.tags: no maxItems declared; platform default maxItems=1000 is enforced on inputs")))
 		})
 	})
 })

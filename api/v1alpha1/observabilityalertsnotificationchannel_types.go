@@ -55,6 +55,7 @@ type EmailConfig struct {
 	// Required when type is "email"
 	// +kubebuilder:validation:Required
 	// +kubebuilder:validation:MinItems=1
+	// +kubebuilder:validation:MaxItems=50
 	// +kubebuilder:validation:items:Pattern=`^[a-zA-Z0-9!#$%&'*+/=?^_~-]+(?:\.[a-zA-Z0-9!#$%&'*+/=?^_~-]+)*@[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?)*$`
 	To []string `json:"to"`
 

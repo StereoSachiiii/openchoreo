@@ -13,7 +13,6 @@ import (
 	"strings"
 	"time"
 
-	apiextschema "k8s.io/apiextensions-apiserver/pkg/apiserver/schema"
 	"k8s.io/apimachinery/pkg/runtime"
 
 	"github.com/openchoreo/openchoreo/api/v1alpha1"
@@ -294,10 +293,10 @@ func (p *Pipeline) BuildCELContext(input *RenderInput) (map[string]any, error) {
 
 // buildParameters builds the developer parameters with defaults applied from the Workflow schema.
 func (p *Pipeline) buildParameters(input *RenderInput) (map[string]any, error) {
-	// Build structural schema from Workflow for applying defaults
-	structural, err := p.buildStructuralSchema(input.Workflow)
+	// Build structural and bounded JSON schema from Workflow in one pass
+	structural, jsonSchema, err := schema.ResolveSectionToBundle(input.Workflow.Spec.Parameters)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to build structural schema: %w", err)
 	}
 
 	// Extract developer parameters from WorkflowRun
@@ -306,21 +305,18 @@ func (p *Pipeline) buildParameters(input *RenderInput) (map[string]any, error) {
 		return nil, fmt.Errorf("failed to extract workflow run parameters: %w", err)
 	}
 
-	// Apply defaults from schema
+	// Apply defaults from schema and validate against bounded JSON schema
 	if structural != nil {
-		return schema.ApplyDefaults(developerParams, structural), nil
+		defaulted := schema.ApplyDefaults(developerParams, structural)
+		if jsonSchema != nil {
+			if err := schema.ValidateWithJSONSchema(defaulted, jsonSchema); err != nil {
+				return nil, fmt.Errorf("workflow run parameters validation failed: %w", err)
+			}
+		}
+		return defaulted, nil
 	}
 
 	return developerParams, nil
-}
-
-// buildStructuralSchema builds the structural schema from Workflow for applying defaults.
-func (p *Pipeline) buildStructuralSchema(wf *v1alpha1.Workflow) (*apiextschema.Structural, error) {
-	structural, err := schema.ResolveSectionToStructural(wf.Spec.Parameters)
-	if err != nil {
-		return nil, fmt.Errorf("failed to build structural schema: %w", err)
-	}
-	return structural, nil
 }
 
 // validateRenderedResource ensures the rendered resource has required Kubernetes fields.

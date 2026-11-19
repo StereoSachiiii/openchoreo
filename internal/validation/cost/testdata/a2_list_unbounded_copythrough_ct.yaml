@@ -1,0 +1,27 @@
+// Scenario: A2_ComponentType - List with no maxItems, no expression touching it (copy-through only)
+// Invariant: Unconstrained lists that are never evaluated in CEL do not trigger CEL cost rejection.
+// Expected result: Admitted at ComponentType admission.
+apiVersion: openchoreo.dev/v1alpha1
+kind: ComponentType
+metadata:
+  name: a2-list-copythrough
+  namespace: default
+spec:
+  workloadType: deployment
+  parameters:
+    openAPIV3Schema:
+      type: object
+      properties:
+        allowedIPs:
+          type: array
+          items:
+            type: string
+  resources:
+    - id: deployment
+      template:
+        apiVersion: apps/v1
+        kind: Deployment
+        metadata:
+          name: test-app
+        spec:
+          replicas: 1

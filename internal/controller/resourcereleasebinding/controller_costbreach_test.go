@@ -61,15 +61,16 @@ var _ = Describe("ResourceReleaseBinding controller — CEL cost breach", func()
 	}
 
 	// budgetBurningTemplate breaches the reconcile's cumulative cost BUDGET
-	// rather than the per-expression limit: 250 distinct expressions, each a
+	// rather than the per-expression limit: distinct expressions, each a
 	// few thousand cost units — comfortably legal on its own — that together
-	// outspend the budget. The expressions differ from one another on purpose,
-	// so which one happens to tip the total over is a real question and the
-	// message-determinism assertion below is not vacuous.
+	// outspend the budget (MaxCumulativeRenderBudget). The expressions differ from
+	// one another on purpose, so which one happens to tip the total over is a real
+	// question and the message-determinism assertion below is not vacuous.
 	budgetBurningTemplate := func(name string) *runtime.RawExtension {
-		data := make(map[string]string, 250)
-		for i := range 250 {
-			data[fmt.Sprintf("field%03d", i)] = fmt.Sprintf("${size(lists.range(%d))}", 9750+i)
+		const numFields = 1100
+		data := make(map[string]string, numFields)
+		for i := range numFields {
+			data[fmt.Sprintf("field%04d", i)] = fmt.Sprintf("${size(lists.range(%d))}", 9500+(i%500))
 		}
 		body := map[string]any{
 			"apiVersion": "v1",

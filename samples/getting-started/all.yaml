@@ -258,6 +258,7 @@ spec:
             - Never
         imagePullSecrets:
           type: array
+          maxItems: 16
           items:
             type: string
           default: []
@@ -469,6 +470,7 @@ spec:
             - Never
         imagePullSecrets:
           type: array
+          maxItems: 16
           items:
             type: string
           default: []
@@ -757,6 +759,7 @@ spec:
             - Never
         imagePullSecrets:
           type: array
+          maxItems: 16
           items:
             type: string
           default: []
@@ -1026,6 +1029,7 @@ spec:
             - Never
         imagePullSecrets:
           type: array
+          maxItems: 16
           items:
             type: string
           default: []

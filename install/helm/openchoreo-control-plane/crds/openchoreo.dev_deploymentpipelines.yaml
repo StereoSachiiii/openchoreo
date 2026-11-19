@@ -88,11 +88,13 @@ spec:
                         required:
                         - name
                         type: object
+                      maxItems: 50
                       type: array
                   required:
                   - sourceEnvironmentRef
                   - targetEnvironmentRefs
                   type: object
+                maxItems: 50
                 type: array
             type: object
           status:

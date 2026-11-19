@@ -228,6 +228,7 @@ spec:
                           x-kubernetes-validations:
                           - message: value and valueFrom are mutually exclusive
                             rule: '!(has(self.value) && has(self.valueFrom))'
+                        maxItems: 1024
                         type: array
                       files:
                         description: File configurations.
@@ -272,6 +273,7 @@ spec:
                           x-kubernetes-validations:
                           - message: value and valueFrom are mutually exclusive
                             rule: '!(has(self.value) && has(self.valueFrom))'
+                        maxItems: 256
                         type: array
                     type: object
                 type: object

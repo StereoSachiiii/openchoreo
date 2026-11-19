@@ -274,6 +274,7 @@ spec:
                   - internal
                   - external
                   type: string
+                maxItems: 3
                 minItems: 1
                 type: array
                 x-kubernetes-list-type: set

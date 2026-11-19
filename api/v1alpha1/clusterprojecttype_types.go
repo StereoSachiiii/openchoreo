@@ -23,6 +23,7 @@ type ClusterProjectTypeSpec struct {
 	// Validations are CEL-based rules evaluated during rendering.
 	// All rules must evaluate to true for rendering to proceed.
 	// +optional
+	// +kubebuilder:validation:MaxItems=100
 	Validations []ValidationRule `json:"validations,omitempty"`
 
 	// Resources are templates that generate namespace-scoped Kubernetes
@@ -34,6 +35,7 @@ type ClusterProjectTypeSpec struct {
 	// +kubebuilder:validation:MinItems=1
 	// +listType=map
 	// +listMapKey=id
+	// +kubebuilder:validation:MaxItems=100
 	Resources []ResourceTemplate `json:"resources"`
 }
 

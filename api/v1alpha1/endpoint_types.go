@@ -32,6 +32,7 @@ type EndpointSpec struct {
 	// is implicit for every workload endpoint and is not a route an Endpoint
 	// renders, so it is not accepted here.
 	// +kubebuilder:validation:MinItems=1
+	// +kubebuilder:validation:MaxItems=3
 	// +listType=set
 	// +kubebuilder:validation:XValidation:rule="self.all(v, v != 'project')",message="project visibility is implicit for every workload endpoint and cannot be requested on an Endpoint"
 	Visibility []EndpointVisibility `json:"visibility"`

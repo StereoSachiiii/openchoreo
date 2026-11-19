@@ -1,0 +1,25 @@
+// Scenario: A5_ComponentType - String with no maxLength, copy-through only
+// Invariant: Unbounded string without string-sensitive CEL evaluation is admitted.
+// Expected result: Admitted at ComponentType admission.
+apiVersion: openchoreo.dev/v1alpha1
+kind: ComponentType
+metadata:
+  name: a5-string-unbounded-copythrough
+  namespace: default
+spec:
+  workloadType: deployment
+  parameters:
+    openAPIV3Schema:
+      type: object
+      properties:
+        largePayload:
+          type: string
+  resources:
+    - id: deployment
+      template:
+        apiVersion: apps/v1
+        kind: Deployment
+        metadata:
+          name: test-app
+        spec:
+          replicas: 1

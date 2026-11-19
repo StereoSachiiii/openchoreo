@@ -157,7 +157,6 @@ func (v *Validator) ValidateUpdate(_ context.Context, oldObj, newObj runtime.Obj
 	componentreleaselog.Info("Validation for ComponentRelease upon update", "name", newRelease.GetName())
 
 	// Note: spec immutability is enforced by CEL rules in the CRD schema
-
 	// No additional validation needed for updates
 	return nil, nil
 }
