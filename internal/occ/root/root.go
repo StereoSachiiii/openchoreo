@@ -50,6 +50,7 @@ import (
 	"github.com/openchoreo/openchoreo/internal/occ/cmd/secret"
 	"github.com/openchoreo/openchoreo/internal/occ/cmd/secretreference"
 	"github.com/openchoreo/openchoreo/internal/occ/cmd/trait"
+	"github.com/openchoreo/openchoreo/internal/occ/cmd/validate"
 	"github.com/openchoreo/openchoreo/internal/occ/cmd/version"
 	"github.com/openchoreo/openchoreo/internal/occ/cmd/workflow"
 	"github.com/openchoreo/openchoreo/internal/occ/cmd/workflowplane"
@@ -72,6 +73,7 @@ func BuildRootCmd() *cobra.Command {
 
 	rootCmd.AddCommand(
 		apply.NewApplyCmd(f),
+		validate.NewValidateCmd(),
 		login.NewLoginCmd(),
 		logout.NewLogoutCmd(),
 		config.NewConfigCmd(),
